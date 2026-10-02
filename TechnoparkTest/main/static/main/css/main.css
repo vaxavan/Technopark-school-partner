@@ -1,0 +1,78 @@
+/* Сбрасываем стандартные отступы браузера */
+body, ul {
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background: #CFF5F6;
+    font-family: sans-serif; /* Базовый шрифт без засечек */
+}
+
+/* --- Боковая панель --- */
+aside {
+    float: left;
+    background: aliceblue;
+    width: 20%;
+    padding: 2.5%;
+    height: 100vh;
+    box-sizing: border-box; /* padding не будет увеличивать общую ширину блока */
+    color: black;
+    border-right: 5px solid #4d4d4d;
+}
+
+/* --- Логотип --- */
+.logo-wrapper {
+    display: flex;
+    align-items: center; /* Центрируем картинку и текст по вертикали */
+    gap: 15px;           /* Расстояние между иконкой и текстом */
+}
+
+aside img {
+    width: 40px;
+    flex-shrink: 0;      /* Запрещаем иконке сжиматься */
+}
+
+aside .logo {
+    font-size: 20px;
+    font-weight: bold;
+    line-height: 1.2;
+}
+
+/* --- Навигационное меню --- */
+aside h3 {
+    margin-top: 50px;
+    font-size: 25px;
+}
+
+aside ul {
+    list-style: none; /* Убираем маркеры списка */
+}
+
+aside ul li {
+    margin-top: 20px;
+    transition: transform .6s ease; /* Плавная анимация */
+}
+
+aside ul a {
+    color: black;
+    text-decoration: none; /* Убираем подчеркивание у ссылок */
+    display: block;        /* Ссылка занимает всю ширину контейнера (удобнее кликать) */
+}
+
+/* --- Эффекты при наведении --- */
+aside ul li:hover {
+    transform: translateX(10px); /* Аккуратное смещение вправо вместо scale */
+}
+
+aside ul a:hover {
+    color: dodgerblue; /* Цвет текста при наведении */
+}
+
+main .features {
+    float: left;
+    color: white;
+    margin-top: 100px;
+    text-align: center;
+    width: 75%;
+}
