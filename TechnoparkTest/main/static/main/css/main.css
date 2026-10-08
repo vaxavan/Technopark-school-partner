@@ -76,3 +76,151 @@ main .features {
     text-align: center;
     width: 75%;
 }
+
+/* Страница генерации новостей */
+
+.news-generator {
+    max-width: 850px;
+    margin: 40px auto;
+    padding: 35px;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.news-generator h1 {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #222;
+}
+
+.news-generator p {
+    text-align: center;
+    color: #666;
+    margin-bottom: 30px;
+}
+
+.news-generator label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.news-generator textarea {
+    width: 100%;
+    padding: 15px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    font-size: 16px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.news-generator textarea:focus {
+    outline: none;
+    border-color: #f0ad4e;
+}
+
+.generate-btn {
+    display: block;
+    width: 100%;
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #f0ad4e;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 17px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.generate-btn:hover {
+    background-color: #ec971f;
+}
+
+.preview-block,
+.result-block {
+    margin-top: 30px;
+    padding: 20px;
+    background-color: #f8f9fa;
+    border-radius: 10px;
+    border: 1px solid #e0e0e0;
+}
+
+.preview-block h3,
+.result-block h3 {
+    font-size: 20px;
+    margin-bottom: 15px;
+}
+
+#preview,
+#result {
+    min-height: 60px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.6;
+    color: #444;
+}
+
+/* Адаптивность страницы генерации новостей */
+
+.news-generator {
+    width: 100%;
+    max-width: 850px;
+    box-sizing: border-box;
+}
+
+/* Для небольших экранов */
+
+@media (max-width: 1100px) {
+
+    .news-generator {
+        width: calc(100% - 30px);
+        margin: 20px auto;
+        padding: 25px;
+    }
+
+    .news-generator h1 {
+        font-size: 36px;
+    }
+
+    .news-generator p {
+        font-size: 16px;
+    }
+
+}
+
+/* Для телефонов и очень узких окон */
+
+@media (max-width: 600px) {
+
+    .news-generator {
+        width: calc(100% - 20px);
+        padding: 15px;
+        margin: 10px auto;
+    }
+
+    .news-generator h1 {
+        font-size: 27px;
+    }
+
+    .news-generator textarea {
+        font-size: 14px;
+    }
+
+    .generate-btn {
+        font-size: 15px;
+        padding: 12px;
+    }
+
+    .preview-block,
+    .result-block {
+        padding: 15px;
+    }
+main {
+    box-sizing: border-box;
+    min-width: 0;
+}
+}
