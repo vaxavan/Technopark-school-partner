@@ -1,0 +1,14 @@
+# Виртуальное окружение Python
+.venv/
+
+# Секретные настройки
+.env
+.env.*
+!.env.example
+
+# Временные файлы Python
+__pycache__/
+*.pyc
+
+# Настройки PyCharm
+.idea/

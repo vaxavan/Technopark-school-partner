@@ -16,6 +16,7 @@
     </p>
 
     <form id="newsForm">
+        {% csrf_token %}
 
         <label for="newsText">
             Информация о мероприятии:
@@ -58,18 +59,75 @@
 </div>
 
 <script>
-    document.getElementById("newsForm").addEventListener("submit", function(event) {
+    const form = document.getElementById("newsForm");
+    const textInput = document.getElementById("newsText");
+    const preview = document.getElementById("preview");
+    const result = document.getElementById("result");
+    const button = form.querySelector('button[type="submit"]');
 
+    form.addEventListener("submit", async function(event) {
+
+        // Отменяем перезагрузку страницы
         event.preventDefault();
 
-        let text = document.getElementById("newsText").value;
+        // Получаем текст пользователя
+        const text = textInput.value.trim();
 
-        document.getElementById("preview").textContent = text;
+        if (!text) {
+            result.textContent = "Пожалуйста, введите информацию о мероприятии.";
+            return;
+        }
 
-        document.getElementById("result").textContent =
-            "Генерируем новость...";
+        // Показываем предварительный просмотр
+        preview.textContent = text;
 
-        // Позже здесь будет запрос к YandexGPT
+        // Показываем индикатор загрузки
+        result.textContent = "⏳ Генерируем новость...";
+
+        // Блокируем кнопку на время генерации
+        button.disabled = true;
+        button.textContent = "Генерация...";
+
+        try {
+
+            // Отправляем текст на сервер Django
+            const response = await fetch("{% url 'generate_news_api' %}", {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": "{{ csrf_token }}"
+                },
+
+                body: JSON.stringify({
+                    text: text
+                })
+            });
+
+            // Получаем ответ сервера
+            const data = await response.json();
+
+            // Проверяем наличие ошибки
+            if (!response.ok) {
+                throw new Error(
+                    data.error || "Ошибка при генерации новости."
+                );
+            }
+
+            // Показываем готовую новость
+            result.textContent = data.news;
+
+        } catch (error) {
+
+            // Показываем понятное сообщение об ошибке
+            result.textContent = "❌ " + error.message;
+
+        } finally {
+
+            // Возвращаем кнопку в обычное состояние
+            button.disabled = false;
+            button.textContent = "Сгенерировать новость";
+        }
 
     });
 </script>
