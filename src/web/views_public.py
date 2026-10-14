@@ -7,27 +7,25 @@ from email.utils import format_datetime
 from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
-from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
-from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from accounts.models import Organization
-from core.events import record
-from core.models import Event
 from materials import domain
 from materials.models import Channel, Material
 from materials.services import author_added
-from partners.domain.matching import TextMatcher
-from partners.domain.entities import PlacementStatus
-from partners.infrastructure.crawlers import HttpClient, SourceUnavailable, extract_article
-from partners.infrastructure.repositories import DjangoMaterialReader
+from partners.interfaces.school_actions import report_link, unsubscribe
 from partners.models import PlacementRecord
 from publishing.models import Publication, PublicationStatus
-from submissions.clarify import next_round, save_answers
-from submissions.models import Submission, SubmissionPhoto, SubmissionStatus
+from submissions.models import Submission, SubmissionStatus
+from submissions.services import (
+    answer_round,
+    create_submission,
+    current_round,
+    finish_submission,
+)
 
 from .forms import AddInfoForm, SchoolReportForm, SubmissionForm
 
@@ -68,14 +66,7 @@ def public_form(request, code):
         if _rate_limited(request, f"form:{org.code}"):
             messages.error(request, "Слишком много заявок с вашего адреса. Попробуйте через час.")
             return render(request, "public/form.html", {"org": org, "form": form}, status=429)
-        d = form.cleaned_data
-        with transaction.atomic():
-            sub = Submission.objects.create(
-                organization=org, title=d["title"], text=d["text"], event_date=d["event_date"], place=d["place"],
-                author_name=d["author_name"], author_email=d["author_email"], author_phone=d["author_phone"],
-                author_org=d["author_org"], consent_at=timezone.now())
-            for f in d["photos"]:
-                SubmissionPhoto.objects.create(submission=sub, image=f)
+        sub = create_submission(org, form.cleaned_data, form.cleaned_data["photos"])
         return redirect("public_questions", code=org.code, sid=sub.public_id)
     return render(request, "public/form.html", {"org": org, "form": form})
 
@@ -87,35 +78,19 @@ def _get_sub(code, sid):
 @require_http_methods(["GET", "POST"])
 def public_questions(request, code, sid):
     sub = _get_sub(code, sid)
-    if sub.questions_finished or sub.status != SubmissionStatus.NEW:
-        return redirect("public_done", code=code, sid=sid)
-    rnd = sub.rounds.filter(answered_at__isnull=True).first()
-    if request.method == "POST" and rnd is not None:
-        skip = "skip" in request.POST
-        save_answers(rnd, {} if skip else request.POST, skipped=skip)
-        if skip:
-            sub.questions_finished = True
-            sub.save(update_fields=["questions_finished", "updated_at"])
-            return redirect("public_done", code=code, sid=sid)
+    if request.method == "POST":
+        answer_round(sub, request.POST, skip="skip" in request.POST)
         return redirect("public_questions", code=code, sid=sid)
+    rnd = current_round(sub)
     if rnd is None:
-        rnd = next_round(sub)
-        if rnd is None:
-            return redirect("public_done", code=code, sid=sid)
+        return redirect("public_done", code=code, sid=sid)
     return render(request, "public/questions.html", {"org": sub.organization, "sub": sub, "round": rnd,
                                                      "max_rounds": 3})
 
 
 def public_done(request, code, sid):
     sub = _get_sub(code, sid)
-    if not sub.questions_finished:
-        sub.questions_finished = True
-        sub.save(update_fields=["questions_finished", "updated_at"])
-    already = Event.objects.filter(kind="submission.received", object_type="Submission",
-                                   object_id=str(sub.pk)).exists()
-    if not already:
-        record(sub.organization, "submission.received", obj=sub, message=f"Новая заявка №{sub.number}: {sub.title}",
-               submission_id=sub.pk)
+    finish_submission(sub)
     return render(request, "public/done.html", {"org": sub.organization, "sub": sub})
 
 
@@ -203,28 +178,7 @@ def school_report(request, token):
         if _rate_limited(request, f"report:{token}", limit=10):
             messages.error(request, "Слишком много попыток, попробуйте позже.")
         else:
-            url = form.cleaned_data["url"]
-            try:
-                title, text = extract_article(HttpClient(pause=0).get(url))
-            except SourceUnavailable:
-                title, text = "", ""
-            original = DjangoMaterialReader().get(placement.material_id).text
-            res = TextMatcher().compare(original, text) if text else None
-            if placement.status != PlacementStatus.CONFIRMED.value:
-                placement.found_url, placement.found_title = url, title[:500]
-                placement.similarity = res.similarity if res else None
-                if res and res.decision == PlacementStatus.CONFIRMED:
-                    from partners import container
-
-                    placement.save()
-                    container.resolve_disputed()(placement.id, accept=True, url=url, note="ссылку прислала школа")
-                    placement.refresh_from_db()
-                else:
-                    placement.status = PlacementStatus.DISPUTED.value
-                    placement.resolution_note = "ссылку прислала школа, нужна проверка"
-                    placement.save()
-                record(placement.organization, "placement.reported", obj=placement.material,
-                       message=f"{placement.school.name} прислала ссылку: {url}", url=url)
+            report_link(placement, form.cleaned_data["url"])
             result = placement
     return render(request, "public/school_report.html", {"placement": placement, "form": form, "result": result,
                                                          "org": placement.organization})
@@ -236,11 +190,7 @@ def school_unsubscribe(request, token):
                                   report_token=token)
     done = False
     if request.method == "POST":
-        school = placement.school
-        school.unsubscribed_at = timezone.now()
-        school.save(update_fields=["unsubscribed_at"])
-        record(placement.organization, "school.unsubscribed", obj=school,
-               message=f"{school.name} отписалась от рассылки")
+        unsubscribe(placement)
         done = True
     return render(request, "public/unsubscribe.html", {"placement": placement, "done": done,
                                                        "org": placement.organization})

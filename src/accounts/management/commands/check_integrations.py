@@ -34,6 +34,7 @@ class Command(BaseCommand):
         org = Organization.objects.first()
         if org:
             self.check_vk(org)
+            self.check_telegram(org)
             self.check_max(org)
             if o["schools"]:
                 self.check_schools(org, o["schools"])
@@ -91,6 +92,27 @@ class Command(BaseCommand):
             self.ok("ВКонтакте", "есть право загружать фото на стену")
         except Exception as exc:
             self.bad("ВКонтакте", f"{exc}. См. docs/ТОКЕНЫ.md, раздел ВКонтакте")
+
+    def check_telegram(self, org):
+        from publishing.platforms import TelegramPlatform, platform_for
+
+        p = platform_for(org, Channel.TELEGRAM)
+        if not isinstance(p, TelegramPlatform):
+            return self.skip("Telegram", "токен не задан — публикация в демо-режиме")
+        try:
+            me = p._call("getMe")
+            self.ok("Telegram", f"бот @{me.get('username')} авторизован")
+            chat = p._call("getChat", data={"chat_id": p.chat_id})
+            self.ok("Telegram", f"канал/группа «{chat.get('title')}» найден(а)")
+            member = p._call("getChatMember", data={"chat_id": p.chat_id, "user_id": me["id"]})
+            can_post = member.get("status") == "administrator" and (
+                chat.get("type") != "channel" or member.get("can_post_messages"))
+            if can_post or (chat.get("type") != "channel" and member.get("status") in ("member", "administrator")):
+                self.ok("Telegram", "бот может публиковать")
+            else:
+                self.bad("Telegram", "бот не администратор с правом «Публикация сообщений»")
+        except Exception as exc:
+            self.bad("Telegram", f"{exc}. См. docs/ТОКЕНЫ.md, раздел Telegram")
 
     def check_max(self, org):
         from publishing.platforms import MaxPlatform, platform_for

@@ -17,7 +17,7 @@ if TESTING:
         os.environ["POSTGRES_HOST"] = ""
     os.environ.update({"DJANGO_DEBUG": "1", "LLM_BACKEND": "fake", "REDIS_URL": "",
                        "EMAIL_HOST": "", "MAIL_PAUSE_SECONDS": "0", "SNAPSHOT_BACKEND": "none",
-                       "VK_ACCESS_TOKEN": "", "MAX_BOT_TOKEN": "", "VK_SERVICE_TOKEN": "",
+                       "VK_ACCESS_TOKEN": "", "MAX_BOT_TOKEN": "", "VK_SERVICE_TOKEN": "", "TELEGRAM_BOT_TOKEN": "",
                        "SITE_URL": "http://testserver", "DJANGO_ALLOWED_HOSTS": "testserver,localhost"})
 else:
     load_dotenv(REPO_DIR / ".env")
@@ -240,6 +240,10 @@ VK_GROUP_ID = env("VK_GROUP_ID")
 VK_ACCESS_TOKEN = env("VK_ACCESS_TOKEN")
 VK_SERVICE_TOKEN = env("VK_SERVICE_TOKEN")
 VK_API_VERSION = "5.199"
+
+TELEGRAM_BOT_TOKEN = env("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = env("TELEGRAM_CHAT_ID")
+TELEGRAM_API_URL = env("TELEGRAM_API_URL", "https://api.telegram.org")
 
 MAX_BOT_TOKEN = env("MAX_BOT_TOKEN")
 MAX_CHAT_ID = env("MAX_CHAT_ID")

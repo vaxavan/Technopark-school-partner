@@ -5,13 +5,17 @@ from core.models import EncryptedTextField
 from materials.models import Channel
 
 
+# площадки, для которых нужен токен (Дзен работает через RSS без токена)
+PLATFORM_CHANNELS = (Channel.VK, Channel.TELEGRAM, Channel.MAX)
+
+
 class PlatformAccount(models.Model):
     """Аккаунт площадки организации. Токен хранится в зашифрованном виде."""
 
     organization = models.ForeignKey("accounts.Organization", on_delete=models.CASCADE,
                                      related_name="platform_accounts")
-    channel = models.CharField(max_length=20, choices=[(Channel.VK, "ВКонтакте"), (Channel.MAX, "Max")])
-    target_id = models.CharField("ID группы / чата", max_length=64, blank=True)
+    channel = models.CharField(max_length=20, choices=[(c.value, c.label) for c in PLATFORM_CHANNELS])
+    target_id = models.CharField("ID группы / канала / чата", max_length=64, blank=True)
     token = EncryptedTextField("токен", blank=True)
     enabled = models.BooleanField("включено", default=True)
     updated_at = models.DateTimeField(auto_now=True)

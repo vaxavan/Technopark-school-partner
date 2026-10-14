@@ -2,7 +2,6 @@
 
 from functools import wraps
 
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
@@ -17,7 +16,6 @@ from accounts.models import Role
 from core.events import record
 from core.models import Event
 from core.ports import LLMError
-from integrations.mail import mail_mode
 from materials import domain, services
 from materials.generation import EDIT_COMMANDS
 from materials.models import CHANNEL_RULES, Channel, Material, MaterialStatus
@@ -25,13 +23,21 @@ from partners import container
 from partners.interfaces.importer import import_schools
 from partners.interfaces.report import export_xlsx, placement_rows, summary
 from partners.models import FoundPublicationRecord, PlacementRecord, School
-from publishing.models import PlatformAccount, Publication, PublicationStatus
-from publishing.platforms import platform_for
-from publishing.services import mark_published_manually
+from publishing.models import PLATFORM_CHANNELS, PlatformAccount, Publication
+from publishing.services import integration_modes, save_platform_account
 from submissions.models import Submission, SubmissionStatus
 
-from .forms import (AcceptForm, ApproveForm, ImportForm, OrgSettingsForm, PlatformForm, ReasonForm, SchoolForm,
-                    SourceFormSet)
+from . import selectors
+from .forms import (
+    AcceptForm,
+    ApproveForm,
+    ImportForm,
+    OrgSettingsForm,
+    PlatformForm,
+    ReasonForm,
+    SchoolForm,
+    SourceFormSet,
+)
 
 
 def staff_required(view):
@@ -67,32 +73,7 @@ def switch_org(request, org_id):
 
 @staff_required
 def dashboard(request):
-    org = request.org
-    subs = Submission.objects.filter(organization=org)
-    mats = Material.objects.filter(organization=org)
-    now = timezone.now()
-    ctx = {
-        "new_subs": subs.filter(status=SubmissionStatus.NEW, questions_finished=True)[:10],
-        "waiting_subs": subs.filter(status=SubmissionStatus.WAITING_AUTHOR)[:10],
-        "on_approval": mats.filter(status=MaterialStatus.ON_APPROVAL)[:10],
-        "preparing": mats.filter(status=MaterialStatus.PREPARING)[:10],
-        "upcoming": Publication.objects.filter(material__organization=org, status=PublicationStatus.SCHEDULED)
-                    .select_related("material").order_by("scheduled_at")[:10],
-        "errors": mats.filter(status=MaterialStatus.PUBLISH_ERROR)[:10],
-        "disputed": PlacementRecord.objects.filter(organization=org, status="disputed")
-                    .select_related("school", "material")[:10],
-        "counts": {
-            "new": subs.filter(status=SubmissionStatus.NEW, questions_finished=True).count(),
-            "approval": mats.filter(status=MaterialStatus.ON_APPROVAL).count(),
-            "scheduled": mats.filter(status=MaterialStatus.SCHEDULED).count(),
-            "published_month": mats.filter(status=MaterialStatus.PUBLISHED,
-                                           updated_at__gte=now - timezone.timedelta(days=30)).count(),
-        },
-        "partners": summary(org),
-        "events": Event.objects.filter(organization=org)[:8],
-        "public_url": f"{settings.SITE_URL}/f/{org.code}/",
-    }
-    return render(request, "staff/dashboard.html", ctx)
+    return render(request, "staff/dashboard.html", selectors.dashboard(request.org))
 
 
 # ---------- Заявки ----------
@@ -169,10 +150,8 @@ def material_detail(request, mid):
             cmd = request.POST.get("command") or request.POST.get("custom", "")
             _act(request, lambda: services.edit_by_command(material, channel, cmd, user), "Модель поправила текст")
         elif action == "restore":
-            v = material.variants.filter(pk=request.POST.get("variant_id")).first()
-            if v:
-                _act(request, lambda: services.edit_manually(material, v.channel, v.text, user),
-                     f"Версия {v.version} восстановлена")
+            _act(request, lambda: services.restore_version(material, request.POST.get("variant_id"), user),
+                 "Версия восстановлена")
         elif action == "channels":
             _act(request, lambda: services.set_channels(material, request.POST.getlist("channels"), user),
                  "Площадки обновлены")
@@ -194,19 +173,11 @@ def material_detail(request, mid):
         elif action == "retry":
             _act(request, lambda: services.retry_publication(material, user), "Публикация будет повторена")
         elif action == "mark_published":
-            pub = material.publications.filter(pk=request.POST.get("publication_id")).first()
-            url = request.POST.get("url", "").strip()
-            if pub and url.startswith("http"):
-                mark_published_manually(pub, url)
-                record(request.org, "publication.manual", actor=user, obj=material,
-                       message=f"{pub.get_channel_display()}: отмечено вручную {url}")
-                messages.success(request, "Отмечено как опубликованное")
+            _act(request, lambda: services.mark_published(material, request.POST.get("publication_id"),
+                                                          request.POST.get("url", "").strip(), user),
+                 "Отмечено как опубликованное")
         elif action == "dispatch":
-            from partners.tasks import dispatch_material
-
-            if material.status == MaterialStatus.PUBLISHED:
-                dispatch_material.delay(material.pk)
-                messages.success(request, "Рассылка школам запущена")
+            _act(request, lambda: services.dispatch_to_schools(material, user), "Рассылка школам запущена")
         return redirect(f"{request.path}?ch={channel}")
 
     variants = {v.channel: v for v in material.current_variants()}
@@ -362,7 +333,7 @@ def org_settings(request):
     can_edit = request.role in (Role.DIRECTOR, Role.ADMIN)
     form = OrgSettingsForm(request.POST or None, instance=org, prefix="org")
     platform_forms = {}
-    for ch in (Channel.VK, Channel.MAX):
+    for ch in PLATFORM_CHANNELS:
         acc = PlatformAccount.objects.filter(organization=org, channel=ch).first()
         platform_forms[ch] = PlatformForm(request.POST or None, prefix=ch, initial={
             "target_id": acc.target_id if acc else "", "enabled": acc.enabled if acc else True})
@@ -374,27 +345,13 @@ def org_settings(request):
             return redirect("settings")
         if which in platform_forms and platform_forms[which].is_valid():
             d = platform_forms[which].cleaned_data
-            acc, _ = PlatformAccount.objects.get_or_create(organization=org, channel=which)
-            acc.target_id = d["target_id"].strip()
-            acc.enabled = d["enabled"]
-            if d["clear"]:
-                acc.token = ""
-            elif d["token"]:
-                acc.token = d["token"].strip()
-            acc.save()
-            record(org, "platform.updated", actor=request.user, message=f"Изменены настройки {Channel(which).label}")
+            save_platform_account(org, which, target_id=d["target_id"], token=d["token"], enabled=d["enabled"],
+                                  clear=d["clear"], actor=request.user)
             messages.success(request, "Настройки площадки сохранены")
             return redirect("settings")
-    modes = {
-        "llm": settings.LLM_BACKEND,
-        "mail": mail_mode(),
-        "vk": "demo" if platform_for(org, Channel.VK).demo else "live",
-        "max": "demo" if platform_for(org, Channel.MAX).demo else "live",
-        "vk_monitor": bool(settings.VK_SERVICE_TOKEN),
-        "snapshot": settings.SNAPSHOT_BACKEND,
-    }
+    modes = integration_modes(org)
     return render(request, "staff/settings.html", {
         "form": form, "platform_forms": platform_forms, "modes": modes,
-        "rss_url": f"{settings.SITE_URL}/rss/{org.code}.xml", "public_url": f"{settings.SITE_URL}/f/{org.code}/",
+        "rss_url": modes["rss_url"], "public_url": modes["public_form_url"],
         "accounts": {a.channel: a for a in PlatformAccount.objects.filter(organization=org)},
     })

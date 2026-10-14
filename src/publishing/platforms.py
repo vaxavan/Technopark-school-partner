@@ -1,6 +1,7 @@
 """Адаптеры площадок. Если токена нет — работает демо-адаптер: «публикует» на
 внутреннюю страницу системы, чтобы весь процесс можно было показать без доступов."""
 
+import json
 import logging
 import time
 
@@ -131,6 +132,76 @@ class MaxPlatform:
         return PostResult(external_id=mid, url=msg.get("url") or "", raw=data)
 
 
+class TelegramPlatform:
+    """Публикация в канал или группу Telegram через Bot API. Бот должен быть администратором
+    канала с правом «Публикация сообщений». chat_id — «@имя_канала» или число вида -100…"""
+
+    code = Channel.TELEGRAM
+    demo = False
+    CAPTION_LIMIT = 1024
+    TEXT_LIMIT = 4096
+
+    def __init__(self, chat_id, token, base_url="https://api.telegram.org"):
+        self.chat_id = str(chat_id).strip()
+        self.token = token
+        self.base = f"{base_url.rstrip('/')}/bot{token}/"
+
+    def _call(self, method, data=None, files=None):
+        for attempt in range(3):
+            try:
+                resp = requests.post(self.base + method, data=data, files=files, timeout=60)
+                body = resp.json()
+            except (requests.RequestException, ValueError) as exc:
+                # в тексте ошибки requests есть адрес с токеном — его не показываем
+                raise PlatformError(f"Telegram недоступен: {type(exc).__name__}") from None
+            if body.get("ok"):
+                return body["result"]
+            retry = (body.get("parameters") or {}).get("retry_after")
+            if resp.status_code == 429 and retry and attempt < 2:
+                time.sleep(min(int(retry), 30))
+                for fh in (files or {}).values():
+                    fh.seek(0)
+                continue
+            raise PlatformError(f"Telegram: {body.get('error_code')} {body.get('description')}")
+        raise PlatformError("Telegram: слишком много запросов")
+
+    def post_url(self, message):
+        chat = message.get("chat", {})
+        mid = message.get("message_id")
+        if chat.get("username"):
+            return f"https://t.me/{chat['username']}/{mid}"
+        cid = str(chat.get("id", self.chat_id))
+        if cid.startswith("-100"):
+            return f"https://t.me/c/{cid[4:]}/{mid}"
+        return ""
+
+    def publish(self, text, image_paths):
+        text = text[: self.TEXT_LIMIT]
+        images = image_paths[:10]
+        caption_fits = len(text) <= self.CAPTION_LIMIT
+        handles = [open(p, "rb") for p in images]
+        try:
+            if len(handles) == 1:
+                data = {"chat_id": self.chat_id}
+                if caption_fits:
+                    data["caption"] = text
+                msg = self._call("sendPhoto", data=data, files={"photo": handles[0]})
+            elif handles:
+                media = [{"type": "photo", "media": f"attach://p{i}"} for i in range(len(handles))]
+                if caption_fits:
+                    media[0]["caption"] = text
+                msgs = self._call("sendMediaGroup", data={"chat_id": self.chat_id, "media": json.dumps(media)},
+                                  files={f"p{i}": h for i, h in enumerate(handles)})
+                msg = msgs[0]
+            if not handles or not caption_fits:
+                # длинный текст отдельным сообщением после фото
+                msg = self._call("sendMessage", data={"chat_id": self.chat_id, "text": text})
+        finally:
+            for h in handles:
+                h.close()
+        return PostResult(external_id=str(msg.get("message_id")), url=self.post_url(msg), raw=msg)
+
+
 class DemoPlatform:
     """Без токена: публикация на внутреннюю страницу /demo/... (видно, что это демо)."""
 
@@ -152,6 +223,11 @@ def platform_for(organization, channel):
         group, token = (acc.target_id, acc.token) if acc and acc.token else (settings.VK_GROUP_ID, settings.VK_ACCESS_TOKEN)
         if group and token:
             return VkPlatform(group, token, settings.VK_API_VERSION)
+    elif channel == Channel.TELEGRAM:
+        chat, token = ((acc.target_id, acc.token) if acc and acc.token
+                       else (settings.TELEGRAM_CHAT_ID, settings.TELEGRAM_BOT_TOKEN))
+        if chat and token:
+            return TelegramPlatform(chat, token, settings.TELEGRAM_API_URL)
     elif channel == Channel.MAX:
         chat, token = (acc.target_id, acc.token) if acc and acc.token else (settings.MAX_CHAT_ID, settings.MAX_BOT_TOKEN)
         if chat and token:

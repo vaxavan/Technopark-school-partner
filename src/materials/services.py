@@ -17,7 +17,7 @@ from .models import Approval, Channel, Material, MaterialStatus, VariantSource
 
 log = logging.getLogger(__name__)
 
-DEFAULT_CHANNELS = [Channel.VK, Channel.MAX, Channel.DZEN, Channel.PARTNERS]
+DEFAULT_CHANNELS = [Channel.VK, Channel.TELEGRAM, Channel.MAX, Channel.DZEN, Channel.PARTNERS]
 
 
 def _role(user, org):
@@ -243,3 +243,31 @@ def set_channels(material: Material, channels, user):
             except LLMError:
                 add_version(material, c, f"{material.title}\n\n{material.submission.text}", VariantSource.MANUAL,
                             checks=["Языковая модель недоступна — подготовьте текст вручную"], attempts=0)
+
+
+def restore_version(material: Material, variant_id, user):
+    v = material.variants.filter(pk=variant_id).first()
+    if v is None:
+        raise domain.TransitionError("Версия не найдена")
+    return edit_manually(material, v.channel, v.text, user)
+
+
+def mark_published(material: Material, publication_id, url, user):
+    from publishing.services import mark_published_manually
+
+    pub = material.publications.filter(pk=publication_id).first()
+    if pub is None or not str(url).startswith("http"):
+        raise domain.TransitionError("Укажите ссылку на вышедший пост")
+    mark_published_manually(pub, url)
+    record(material.organization, "publication.manual", actor=user, obj=material,
+           message=f"{pub.get_channel_display()}: отмечено вручную {url}")
+    return pub
+
+
+def dispatch_to_schools(material: Material, user):
+    """Разослать школам, которым ещё не отправляли (например, добавили новые школы)."""
+    if material.status != MaterialStatus.PUBLISHED:
+        raise domain.TransitionError("Рассылка возможна после публикации")
+    from partners.tasks import dispatch_material
+
+    transaction.on_commit(lambda: dispatch_material.delay(material.pk))

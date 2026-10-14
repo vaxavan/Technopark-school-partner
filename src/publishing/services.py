@@ -18,7 +18,7 @@ from .platforms import platform_for
 log = logging.getLogger(__name__)
 
 STUCK_AFTER = timedelta(minutes=10)
-PUBLIC_CHANNELS = (Channel.VK, Channel.MAX, Channel.DZEN)
+PUBLIC_CHANNELS = (Channel.VK, Channel.TELEGRAM, Channel.MAX, Channel.DZEN)
 
 
 def schedule_publications(material: Material):
@@ -156,3 +156,41 @@ def capture_for_publication(publication_id):
         return
     capture_evidence(pub.material.organization, pub.material, pub.url, publication=pub,
                      note="демо-публикация" if pub.demo else "")
+
+
+def save_platform_account(organization, channel, *, target_id=None, token=None, enabled=None, clear=False, actor=None):
+    """Настройки площадки организации. Токен шифруется в базе; пустой token — не менять."""
+    from .models import PlatformAccount
+
+    from .models import PLATFORM_CHANNELS
+
+    if channel not in PLATFORM_CHANNELS:
+        raise ValueError("Неизвестная площадка")
+    acc, _ = PlatformAccount.objects.get_or_create(organization=organization, channel=channel)
+    if target_id is not None:
+        acc.target_id = str(target_id).strip()
+    if enabled is not None:
+        acc.enabled = bool(enabled)
+    if clear:
+        acc.token = ""
+    elif token:
+        acc.token = token.strip()
+    acc.save()
+    record(organization, "platform.updated", actor=actor, message=f"Изменены настройки {Channel(channel).label}")
+    return acc
+
+
+def integration_modes(organization):
+    from integrations.mail import mail_mode
+
+    return {
+        "llm": settings.LLM_BACKEND,
+        "mail": mail_mode(),
+        "vk": "demo" if platform_for(organization, Channel.VK).demo else "live",
+        "max": "demo" if platform_for(organization, Channel.MAX).demo else "live",
+        "telegram": "demo" if platform_for(organization, Channel.TELEGRAM).demo else "live",
+        "vk_monitor": bool(settings.VK_SERVICE_TOKEN),
+        "snapshot": settings.SNAPSHOT_BACKEND,
+        "rss_url": f"{settings.SITE_URL}/rss/{organization.code}.xml",
+        "public_form_url": f"{settings.SITE_URL}/f/{organization.code}/",
+    }
