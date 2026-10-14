@@ -1,0 +1,44 @@
+name: Выкладка на сервер
+
+# После слияния в main: тесты → выкладка на сервер по SSH.
+# Можно запустить и вручную: Actions → «Выкладка на сервер» → Run workflow.
+#
+# Секреты репозитория (Settings → Secrets and variables → Actions):
+#   DEPLOY_HOST — IP сервера, DEPLOY_USER — пользователь (deploy),
+#   DEPLOY_KEY — закрытый SSH-ключ этого проекта (содержимое файла technopark_deploy).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: deploy
+
+jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+
+  deploy:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Выкладка
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          KEY: ${{ secrets.DEPLOY_KEY }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "$USER@$HOST" "
+            set -e
+            cd /opt/technopark
+            git fetch -q origin $BRANCH
+            git checkout -q $BRANCH
+            git reset -q --hard origin/$BRANCH
+            docker compose -p technopark up -d --build --remove-orphans
+            docker image prune -f >/dev/null
+            sleep 10
+            docker compose -p technopark ps
+            curl -fsS -o /dev/null -w 'Проверка сайта: HTTP %{http_code}\n' http://localhost:\$(grep ^HTTP_PORT= .env | cut -d= -f2)/login/
+          "

@@ -6,6 +6,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/vaxavan/Technopark-school-partner/system-v1/scripts/install_server.sh | sh -s -- 8080
 #
 # Аргумент — порт, на котором откроется система (по умолчанию 8080).
+# Если вы входите не под root, а под пользователем с sudo (например, deploy): ... | sudo sh -s -- 8080
 set -e
 PORT="${1:-8080}"
 DIR=/opt/technopark
@@ -58,6 +59,13 @@ if [ ! -f .env ]; then
     .env
   chmod 600 .env
   NEW_ENV=1
+fi
+
+# если запущено через sudo — папка принадлежит пользователю (deploy), чтобы автодеплой мог делать git pull
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+  chown -R "$SUDO_USER":"$SUDO_USER" "$DIR"
+  id -nG "$SUDO_USER" | grep -qw docker || usermod -aG docker "$SUDO_USER"
+  echo "Папка $DIR передана пользователю $SUDO_USER"
 fi
 
 echo "== Сборка и запуск (первый раз 5–10 минут)"
