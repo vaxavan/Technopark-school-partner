@@ -24,3 +24,6 @@ staticfiles/
 
 # Локальный Redis
 dump.rdb
+
+# Резервные копии базы на сервере
+backups/

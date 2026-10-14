@@ -161,6 +161,12 @@ LOGOUT_REDIRECT_URL = "login"
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False
 SESSION_COOKIE_SECURE = SITE_URL.startswith("https")
+if SITE_URL.startswith("https"):
+    # HTTPS завершается на Caddy, до Django запрос доходит по http с этим заголовком
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_HSTS_SECONDS = 86400
+    # перенаправление http→https делает Caddy; в Django его не включаем,
+    # иначе фоновые снимки собственных страниц (http://nginx) уйдут в редирект
 CSRF_COOKIE_SECURE = SITE_URL.startswith("https")
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
