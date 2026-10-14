@@ -21,3 +21,6 @@ staticfiles/
 .idea/
 .vscode/
 .DS_Store
+
+# Локальный Redis
+dump.rdb
