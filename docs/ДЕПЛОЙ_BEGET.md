@@ -159,7 +159,7 @@ docker run --rm python:3.12-slim sh -c "pip -q install cryptography && python -c
 ```
 
 Откройте в браузере:
-- `https://ваш-домен/login/` — вход (`admin` / `director`);
+- `https://ваш-домен/login/` — вход по e-mail из `DIRECTOR_EMAIL` / `ADMIN_EMAIL`;
 - `https://ваш-домен/f/istok/` — форма для авторов, эту ссылку можно раздавать;
 - `https://ваш-домен/rss/istok.xml` — лента для Дзена.
 

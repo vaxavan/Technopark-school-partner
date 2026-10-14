@@ -191,7 +191,7 @@ def test_api_flow_and_isolation(client, org, other_org, admin_user, submission, 
     # пользователь другой организации ничего не видит
     from accounts.models import Membership
 
-    stranger = django_user_model.objects.create_user("stranger", password="pass12345")
+    stranger = django_user_model.objects.create_user("stranger@example.com", password="pass12345")
     Membership.objects.create(user=stranger, organization=other_org, role="admin")
     client.force_login(stranger)
     assert client.get(f"/api/v1/materials/{mid}/").status_code == 404
@@ -200,3 +200,28 @@ def test_api_flow_and_isolation(client, org, other_org, admin_user, submission, 
 
     client.logout()
     assert client.get("/api/v1/submissions/").status_code == 403
+
+
+@pytest.mark.django_db
+def test_login_by_email_any_case(client, admin_user):
+    resp = client.post(reverse("login"), {"username": "  ADMIN@Example.com ", "password": "pass12345"})
+    assert resp.status_code == 302 and resp["Location"] == reverse("dashboard")
+
+
+@pytest.mark.django_db
+def test_init_system_creates_users_and_schools(monkeypatch, django_user_model):
+    from django.core.management import call_command
+
+    from accounts.models import Membership
+
+    monkeypatch.setenv("DIRECTOR_EMAIL", "Boss@Technopark.ru")
+    monkeypatch.setenv("DIRECTOR_PASSWORD", "secret-pass-1")
+    monkeypatch.delenv("ADMIN_EMAIL", raising=False)
+    call_command("init_system")
+    call_command("init_system")  # повторный запуск ничего не дублирует
+    assert django_user_model.objects.count() == 2
+    boss = django_user_model.objects.get(email="boss@technopark.ru")
+    assert boss.check_password("secret-pass-1")
+    assert Membership.objects.get(user=boss).role == "director"
+    assert django_user_model.objects.filter(email="admin@istok.local").exists()
+    assert boss.memberships.get().organization.schools.count() == 18

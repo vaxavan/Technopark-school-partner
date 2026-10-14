@@ -30,16 +30,16 @@ class Command(BaseCommand):
 
         User = get_user_model()
         for role, prefix in ((Role.DIRECTOR, "DIRECTOR"), (Role.ADMIN, "ADMIN")):
-            username = os.getenv(f"{prefix}_USERNAME", role.value)
-            if User.objects.filter(username=username).exists():
-                user = User.objects.get(username=username)
-            else:
+            # вход по e-mail; если адрес не задан — служебный адрес, его можно сменить в админке
+            email = (os.getenv(f"{prefix}_EMAIL") or f"{role.value}@{code}.local").lower()
+            user = User.objects.filter(email=email).first()
+            if user is None:
                 password = os.getenv(f"{prefix}_PASSWORD") or secrets.token_urlsafe(9)
-                user = User.objects.create_user(username=username, password=password,
-                                                email=os.getenv(f"{prefix}_EMAIL", ""),
+                user = User.objects.create_user(email=email, password=password,
+                                                full_name=os.getenv(f"{prefix}_NAME", role.label),
                                                 is_staff=True, is_superuser=(role == Role.ADMIN))
                 shown = password if not os.getenv(f"{prefix}_PASSWORD") else "(из .env)"
-                self.stdout.write(self.style.WARNING(f"Создан пользователь {username} / пароль: {shown}"))
+                self.stdout.write(self.style.WARNING(f"Создан пользователь {email} / пароль: {shown}"))
             Membership.objects.get_or_create(user=user, organization=org, defaults={"role": role})
 
         if not org.schools.exists():

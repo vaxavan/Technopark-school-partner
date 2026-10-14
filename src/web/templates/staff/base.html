@@ -31,7 +31,7 @@
         {% for m in user_memberships %}<option value="{% url 'switch_org' m.organization_id %}" {% if m.organization_id == current_org.id %}selected{% endif %}>{{ m.organization.name }}</option>{% endfor %}
       </select>
     {% endif %}
-    <div class="user">{{ request.user.get_full_name|default:request.user.username }}
+    <div class="user">{{ request.user.get_full_name }}
       <form method="post" action="{% url 'logout' %}" style="display:inline">{% csrf_token %}<button class="btn small ghost" style="margin-top:6px">Выйти</button></form>
     </div>
   </aside>

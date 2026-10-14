@@ -36,7 +36,7 @@ docker compose up -d --build
 Первая сборка занимает 5–10 минут: скачивается браузер для снимков страниц. Когда сборка закончится:
 
 - **http://localhost:8000/f/istok/** — публичная форма заявки (ссылку получают авторы);
-- **http://localhost:8000/login/** — рабочее место (`admin` / `director` с паролями из `.env`);
+- **http://localhost:8000/login/** — рабочее место (e-mail и пароли директора и администратора из `.env`; если e-mail не задан — `director@istok.local` / `admin@istok.local`);
 - **http://localhost:8000/api/docs/** — описание REST API;
 - **http://localhost:8000/django-admin/** — служебная админка.
 

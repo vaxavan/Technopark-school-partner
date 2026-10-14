@@ -41,10 +41,10 @@ def other_org(db):
     return Organization.objects.create(code="other", name="Другая организация")
 
 
-def _user(django_user_model, org, username, role, email):
+def _user(django_user_model, org, username, role, email):  # username оставлен для читаемости фикстур
     from accounts.models import Membership
 
-    u = django_user_model.objects.create_user(username=username, password="pass12345", email=email)
+    u = django_user_model.objects.create_user(email=email, password="pass12345", full_name=username)
     Membership.objects.create(user=u, organization=org, role=role)
     return u
 
