@@ -46,7 +46,9 @@ def publish_one(publication_id):
     состояние «публикуется» под блокировкой; повторно взять её нельзя. Если процесс упал
     посередине, запись через 10 минут уходит в «проверить вручную», а не публикуется снова."""
     with transaction.atomic():
-        pub = (Publication.objects.select_for_update(skip_locked=True)
+        # блокируем только саму запись публикации (of=self): связанные таблицы через внешнее
+        # соединение PostgreSQL блокировать не позволяет
+        pub = (Publication.objects.select_for_update(skip_locked=True, of=("self",))
                .select_related("material__organization", "material__submission", "variant")
                .filter(pk=publication_id, status=PublicationStatus.SCHEDULED).first())
         if pub is None:

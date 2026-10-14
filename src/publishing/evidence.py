@@ -3,6 +3,7 @@
 import hashlib
 import logging
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.utils import timezone
 
@@ -15,7 +16,10 @@ log = logging.getLogger(__name__)
 
 def capture_evidence(organization, material, url, *, school_id=None, publication=None, note="", snapshotter=None):
     snapshotter = snapshotter or get_snapshotter()
-    snap = snapshotter.capture(url) if url.startswith("http") else None
+    fetch_url = url
+    if settings.INTERNAL_SITE_URL != settings.SITE_URL and url.startswith(settings.SITE_URL):
+        fetch_url = settings.INTERNAL_SITE_URL + url[len(settings.SITE_URL):]
+    snap = snapshotter.capture(fetch_url) if url.startswith("http") else None
     ev = Evidence(organization=organization, material=material, school_id=school_id, publication=publication,
                   url=url, captured_at=timezone.now(), note=note)
     stamp = timezone.now().strftime("%Y%m%d-%H%M%S")

@@ -11,6 +11,7 @@ x-app: &app
     REDIS_URL: redis://redis:6379/0
     MEDIA_ROOT: /app/media
     CELERY_TASK_ALWAYS_EAGER: "0"
+    INTERNAL_SITE_URL: http://nginx
   volumes:
     - media:/app/media
   depends_on:
@@ -29,6 +30,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       MEDIA_ROOT: /app/media
       CELERY_TASK_ALWAYS_EAGER: "0"
+      INTERNAL_SITE_URL: http://nginx
       RUN_MIGRATIONS: "1"
 
   worker:

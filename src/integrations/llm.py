@@ -67,13 +67,23 @@ class FakeLLM:
         if "КОМАНДА ПРАВКИ" in user:
             src = user.split("ТЕКСТ:", 1)[-1].strip()
             return src
-        facts = user.split("СВЕДЕНИЯ:", 1)[-1].strip()
-        facts = re.sub(r"\s+", " ", facts)
+        facts = user.split("СВЕДЕНИЯ:", 1)[-1].split("\n\nПредыдущий вариант:", 1)[0].strip()
+        fields = dict(re.findall(r"^(Тема|Описание|Когда|Где|От кого): (.*)$", facts, re.M))
+        title = fields.get("Тема") or facts.split(".")[0][:90]
+        body = fields.get("Описание") or facts
+        extra = []
+        if fields.get("Когда"):
+            extra.append(f"Дата: {fields['Когда']}.")
+        if fields.get("Где"):
+            extra.append(f"Место: {fields['Где']}.")
+        answers = re.findall(r"^— (.*)$", facts, re.M)
+        if answers:
+            extra.append(" ".join(a.split("?", 1)[-1].strip().rstrip(".") + "." for a in answers))
+        text = f"{title}\n\n{body}" + ("\n\n" + " ".join(extra) if extra else "")
         limit_match = re.search(r"не длиннее (\d+) знаков", system + user)
-        title = facts.split(".")[0][:90]
-        text = f"{title}\n\n{facts}"
-        if limit_match:
-            text = text[: int(limit_match.group(1)) - 1]
+        if limit_match and len(text) > int(limit_match.group(1)):
+            cut = text[: int(limit_match.group(1)) - 1]
+            text = cut[: cut.rfind(".") + 1] or cut
         return text
 
     @staticmethod

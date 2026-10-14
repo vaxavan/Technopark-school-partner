@@ -27,7 +27,8 @@ small, .muted { color: var(--muted); }
 code { background: var(--idle-soft); padding: 1px 5px; border-radius: 4px; font-size: .9em; word-break: break-all; }
 
 /* layout */
-.shell { display: grid; grid-template-columns: 230px 1fr; min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 230px 1fr; min-height: 100vh;
+         background: linear-gradient(to right, #16213a 230px, var(--bg) 230px); }
 .side { background: #16213a; color: #cdd5e3; padding: 18px 14px; position: sticky; top: 0; height: 100vh; overflow: auto; }
 .side .brand { color: #fff; font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
 .side .org { font-size: .8rem; color: #93a0b6; margin-bottom: 18px; }
@@ -124,7 +125,7 @@ details[open] > summary { margin-bottom: 8px; }
 .demo-banner { background: var(--warn-soft); color: var(--warn); padding: 8px 12px; border-radius: 8px; font-size: .9rem; margin-bottom: 14px; }
 
 @media (max-width: 900px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: 1fr; background: var(--bg); }
   .side { position: static; height: auto; }
   .split, .g2, .g3, .g4 { grid-template-columns: 1fr; }
   .main { padding: 18px 16px 40px; }

@@ -13,7 +13,9 @@ REPO_DIR = BASE_DIR.parent
 TESTING = "pytest" in sys.modules
 if TESTING:
     # Тесты не трогают внешние сервисы, даже если в .env заданы настоящие ключи
-    os.environ.update({"DJANGO_DEBUG": "1", "LLM_BACKEND": "fake", "REDIS_URL": "", "POSTGRES_HOST": "",
+    if not os.getenv("TEST_WITH_POSTGRES"):
+        os.environ["POSTGRES_HOST"] = ""
+    os.environ.update({"DJANGO_DEBUG": "1", "LLM_BACKEND": "fake", "REDIS_URL": "",
                        "EMAIL_HOST": "", "MAIL_PAUSE_SECONDS": "0", "SNAPSHOT_BACKEND": "none",
                        "VK_ACCESS_TOKEN": "", "MAX_BOT_TOKEN": "", "VK_SERVICE_TOKEN": "",
                        "SITE_URL": "http://testserver", "DJANGO_ALLOWED_HOSTS": "testserver,localhost"})
@@ -46,6 +48,12 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = [h.strip() for h in env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
 SITE_URL = env("SITE_URL", "http://localhost:8000").rstrip("/")
+# Адрес, по которому фоновые задачи открывают страницы самой системы (в Docker — через nginx)
+INTERNAL_SITE_URL = env("INTERNAL_SITE_URL", SITE_URL).rstrip("/")
+if INTERNAL_SITE_URL != SITE_URL:
+    from urllib.parse import urlparse as _u
+
+    ALLOWED_HOSTS.append(_u(INTERNAL_SITE_URL).hostname)
 CSRF_TRUSTED_ORIGINS = [SITE_URL] if SITE_URL.startswith("http") else []
 
 INSTALLED_APPS = [
@@ -135,6 +143,7 @@ STATIC_URL = "static/"
 STATIC_ROOT = REPO_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(env("MEDIA_ROOT", str(REPO_DIR / "media")))
+SERVE_MEDIA = env_bool("SERVE_MEDIA", True)
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
