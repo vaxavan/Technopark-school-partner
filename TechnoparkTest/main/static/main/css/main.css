@@ -268,3 +268,89 @@ main .features {
         margin-top: 30px;
     }
 }
+
+/* Мониторинг школ */
+
+.monitoring-page {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.monitoring-page h1 {
+    margin-bottom: 15px;
+}
+
+.monitoring-page p {
+    color: #666;
+    margin-bottom: 30px;
+}
+
+.monitoring-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 15px;
+}
+
+.monitoring-header button {
+    padding: 12px 20px;
+    background: #2b7cff;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.monitoring-header button:disabled {
+    background: #aab4c3;
+    cursor: not-allowed;
+}
+
+.monitoring-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.monitoring-table th,
+.monitoring-table td {
+    padding: 15px;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+}
+
+.monitoring-table th {
+    background: #f3f5f8;
+    font-weight: 600;
+}
+
+.monitoring-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.monitoring-table a {
+    color: #2b7cff;
+    text-decoration: none;
+}
+
+.monitoring-table a:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+    .monitoring-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .monitoring-page {
+        overflow-x: auto;
+    }
+
+    .monitoring-table {
+        min-width: 650px;
+    }
+}

@@ -1,11 +1,15 @@
 import time
 import requests
+import json
 
 from urllib.parse import urljoin, urlparse
 
 from school_parser import get_page, parse_news_page
 from text_comparison import compare_texts
 from schools_loader import load_schools
+
+from pathlib import Path
+from datetime import datetime
 
 
 # Список школ для первоначальной проверки
@@ -217,6 +221,21 @@ def main():
         results.append(result)
 
         time.sleep(1)
+
+    # Путь к файлу с результатами мониторинга
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    REPORT_FILE = BASE_DIR / "monitoring_results.json"
+
+    report = {
+        "checked_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
+        "schools": results
+    }
+
+    # Сохраняем результаты проверки
+    with open(REPORT_FILE, "w", encoding="utf-8") as file:
+        json.dump(report, file, ensure_ascii=False, indent=4)
+
+    print("\nРезультаты сохранены в monitoring_results.json")
 
     print("\n" + "=" * 65)
     print("ИТОГОВЫЙ ОТЧЁТ")
