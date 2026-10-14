@@ -1,5 +1,6 @@
 # Виртуальное окружение Python
 .venv/
+venv/
 
 # Секретные настройки
 .env
@@ -9,6 +10,14 @@
 # Временные файлы Python
 __pycache__/
 *.pyc
+.pytest_cache/
 
-# Настройки PyCharm
+# Данные, которые создаёт система при работе
+media/
+staticfiles/
+*.sqlite3
+
+# Настройки IDE и системы
 .idea/
+.vscode/
+.DS_Store

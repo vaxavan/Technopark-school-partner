@@ -1,0 +1,45 @@
+{% load static %}<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Рабочее место{% endblock %} — {{ current_org.name }}</title>
+  <link rel="stylesheet" href="{% static 'web/app.css' %}">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">Публикации и партнёры</div>
+    <div class="org">{{ current_org.name }}{% if current_role %} · {% if current_role == 'director' %}директор{% else %}администратор{% endif %}{% endif %}</div>
+    {% with u=request.resolver_match.url_name %}
+    <nav>
+      <a href="{% url 'dashboard' %}" class="{% if u == 'dashboard' %}on{% endif %}">Рабочий стол</a>
+      <a href="{% url 'submission_list' %}" class="{% if 'submission' in u %}on{% endif %}">Заявки</a>
+      <a href="{% url 'material_list' %}" class="{% if 'material' in u %}on{% endif %}">Материалы</a>
+      <a href="{% url 'calendar' %}" class="{% if u == 'calendar' %}on{% endif %}">Расписание</a>
+      <div class="sep"></div>
+      <a href="{% url 'partners_report' %}" class="{% if u == 'partners_report' %}on{% endif %}">Отчёт по школам</a>
+      <a href="{% url 'school_list' %}" class="{% if 'school' in u %}on{% endif %}">Справочник школ</a>
+      <div class="sep"></div>
+      <a href="{% url 'events' %}" class="{% if u == 'events' %}on{% endif %}">Журнал</a>
+      <a href="{% url 'settings' %}" class="{% if u == 'settings' %}on{% endif %}">Настройки</a>
+      <a href="{% url 'api-docs' %}" target="_blank">API</a>
+    </nav>
+    {% endwith %}
+    {% if user_memberships|length > 1 %}
+      <select onchange="location.href=this.value" aria-label="Организация">
+        {% for m in user_memberships %}<option value="{% url 'switch_org' m.organization_id %}" {% if m.organization_id == current_org.id %}selected{% endif %}>{{ m.organization.name }}</option>{% endfor %}
+      </select>
+    {% endif %}
+    <div class="user">{{ request.user.get_full_name|default:request.user.username }}
+      <form method="post" action="{% url 'logout' %}" style="display:inline">{% csrf_token %}<button class="btn small ghost" style="margin-top:6px">Выйти</button></form>
+    </div>
+  </aside>
+  <main class="main">
+    {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

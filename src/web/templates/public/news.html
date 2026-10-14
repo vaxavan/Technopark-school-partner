@@ -1,0 +1,13 @@
+{% extends "public/base.html" %}
+{% block title %}{{ title }} — {{ org.name }}{% endblock %}
+{% block content %}
+<article class="card article">
+  {% if not pub %}<div class="demo-banner">Предпросмотр: материал ещё не опубликован.</div>{% endif %}
+  <h1>{{ title }}</h1>
+  {% if pub %}<p class="muted">{{ pub.published_at|date:"j E Y, H:i" }}</p>{% endif %}
+  {% with photos=material.submission.photos.all %}
+    {% if photos %}<div class="photos" style="margin:12px 0">{% for p in photos %}<img src="{{ p.image.url }}" alt="" style="width:100%;height:auto;max-height:420px">{% endfor %}</div>{% endif %}
+  {% endwith %}
+  {% for p in paragraphs %}<p>{{ p }}</p>{% endfor %}
+</article>
+{% endblock %}

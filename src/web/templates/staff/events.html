@@ -1,0 +1,16 @@
+{% extends "staff/base.html" %}
+{% block title %}Журнал{% endblock %}
+{% block content %}
+<div class="head"><h1>Журнал действий</h1></div>
+<div class="card table-wrap">
+<table>
+  <tr><th>Время</th><th>Событие</th><th>Описание</th><th>Кто</th><th>Уведомление</th></tr>
+  {% for e in page %}
+  <tr><td style="white-space:nowrap">{{ e.created_at|date:"d.m.Y H:i:s" }}</td><td><code>{{ e.kind }}</code></td><td>{{ e.message }}</td>
+    <td>{{ e.actor|default:"система" }}</td>
+    <td>{% if e.processed_at %}<small>✓</small>{% elif e.last_error %}<small style="color:var(--bad)" title="{{ e.last_error }}">ошибка ({{ e.attempts }})</small>{% else %}<small class="muted">в очереди</small>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="5" class="muted">Пусто.</td></tr>{% endfor %}
+</table>
+</div>
+{% include "staff/_pager.html" %}
+{% endblock %}

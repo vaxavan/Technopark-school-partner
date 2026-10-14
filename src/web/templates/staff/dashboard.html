@@ -1,0 +1,59 @@
+{% extends "staff/base.html" %}{% load ui %}
+{% block title %}Рабочий стол{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>Рабочий стол</h1><p class="muted">Ссылка на форму заявки для авторов: <code>{{ public_url }}</code></p></div>
+</div>
+
+<div class="grid g4">
+  <div class="card"><div class="stat">{{ counts.new }}</div><div class="stat-label">новых заявок</div></div>
+  <div class="card"><div class="stat">{{ counts.approval }}</div><div class="stat-label">на утверждении</div></div>
+  <div class="card"><div class="stat">{{ counts.scheduled }}</div><div class="stat-label">в расписании</div></div>
+  <div class="card"><div class="stat">{{ partners.share }}%</div><div class="stat-label">размещений у школ подтверждено ({{ partners.counts.confirmed|default:0 }} из {{ partners.total }})</div></div>
+</div>
+
+<div class="grid g2">
+  <div class="card">
+    <h2>Новые заявки</h2>
+    {% for s in new_subs %}
+      <div style="padding:6px 0;border-bottom:1px solid var(--line)"><a href="{% url 'submission_detail' s.public_id %}">№{{ s.number }} {{ s.title }}</a>
+        <br><small>{{ s.author_name }}{% if s.author_org %}, {{ s.author_org }}{% endif %} · {{ s.created_at|date:"d.m H:i" }}</small></div>
+    {% empty %}<p class="muted">Новых заявок нет.</p>{% endfor %}
+    {% if waiting_subs %}<h3 style="margin-top:14px">Ждём от авторов</h3>
+      {% for s in waiting_subs %}<div><a href="{% url 'submission_detail' s.public_id %}">№{{ s.number }} {{ s.title }}</a></div>{% endfor %}{% endif %}
+  </div>
+  <div class="card">
+    <h2>Материалы</h2>
+    {% for m in on_approval %}
+      <div style="padding:6px 0;border-bottom:1px solid var(--line)">{% badge m.status m.get_status_display %} <a href="{% url 'material_detail' m.public_id %}">{{ m.title }}</a></div>
+    {% endfor %}
+    {% for m in preparing %}
+      <div style="padding:6px 0;border-bottom:1px solid var(--line)">{% badge m.status m.get_status_display %} <a href="{% url 'material_detail' m.public_id %}">{{ m.title }}</a></div>
+    {% endfor %}
+    {% for m in errors %}
+      <div style="padding:6px 0;border-bottom:1px solid var(--line)">{% badge m.status m.get_status_display %} <a href="{% url 'material_detail' m.public_id %}">{{ m.title }}</a></div>
+    {% endfor %}
+    {% if not on_approval and not preparing and not errors %}<p class="muted">Ничего не ждёт решения.</p>{% endif %}
+  </div>
+</div>
+
+<div class="grid g2">
+  <div class="card">
+    <h2>Ближайшие публикации</h2>
+    {% for p in upcoming %}
+      <div style="padding:5px 0">{{ p.scheduled_at|date:"d.m H:i" }} · <strong>{{ p.get_channel_display }}</strong> · <a href="{% url 'material_detail' p.material.public_id %}">{{ p.material.title }}</a></div>
+    {% empty %}<p class="muted">Расписание пусто.</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h2>Школы: требует решения</h2>
+    {% for p in disputed %}
+      <div style="padding:5px 0">{{ p.school.name }} — <a href="{% url 'partners_report' %}?m={{ p.material.public_id }}&status=disputed">{{ p.material.title }}</a> ({{ p.similarity|pct }})</div>
+    {% empty %}<p class="muted">Спорных записей нет.</p>{% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Последние события</h2>
+  <ul class="timeline">{% for e in events %}<li><small>{{ e.created_at|date:"d.m H:i" }}</small> · {{ e.message|default:e.kind }}</li>{% empty %}<li class="muted">Пока пусто.</li>{% endfor %}</ul>
+</div>
+{% endblock %}

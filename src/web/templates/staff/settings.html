@@ -1,0 +1,47 @@
+{% extends "staff/base.html" %}{% load ui %}
+{% block title %}Настройки{% endblock %}
+{% block content %}
+<div class="head"><h1>Настройки</h1></div>
+
+<div class="card">
+  <h2>Подключения</h2>
+  <table>
+    <tr><th>Сервис</th><th>Режим</th><th>Что делать</th></tr>
+    <tr><td>Языковая модель</td><td>{% if modes.llm == 'yandex' %}<span class="badge b-ok">YandexGPT</span>{% else %}<span class="badge b-warn">демо</span>{% endif %}</td><td><small>Ключ задаётся в .env: YANDEX_API_KEY, YANDEX_FOLDER_ID</small></td></tr>
+    <tr><td>Почта</td><td>{% if modes.mail == 'smtp' %}<span class="badge b-ok">SMTP</span>{% else %}<span class="badge b-warn">демо</span>{% endif %}</td><td><small>{% if modes.mail == 'smtp' %}Письма уходят по-настоящему{% else %}Письма сохраняются файлами в media/outbox. Подключение — docs/ТОКЕНЫ.md, раздел «Почта»{% endif %}</small></td></tr>
+    <tr><td>ВКонтакте</td><td>{% if modes.vk == 'live' %}<span class="badge b-ok">подключено</span>{% else %}<span class="badge b-warn">демо</span>{% endif %}</td><td><small>Ниже или в .env: VK_GROUP_ID, VK_ACCESS_TOKEN</small></td></tr>
+    <tr><td>Max</td><td>{% if modes.max == 'live' %}<span class="badge b-ok">подключено</span>{% else %}<span class="badge b-warn">демо</span>{% endif %}</td><td><small>Ниже или в .env: MAX_CHAT_ID, MAX_BOT_TOKEN</small></td></tr>
+    <tr><td>Дзен</td><td><span class="badge b-info">RSS</span></td><td><small>Адрес ленты для Студии Дзена: <code>{{ rss_url }}</code></small></td></tr>
+    <tr><td>Проверка ВК школ</td><td>{% if modes.vk_monitor %}<span class="badge b-ok">включена</span>{% else %}<span class="badge">выключена</span>{% endif %}</td><td><small>.env: VK_SERVICE_TOKEN (сервисный ключ приложения)</small></td></tr>
+    <tr><td>Снимки страниц</td><td><span class="badge b-info">{{ modes.snapshot }}</span></td><td><small>Playwright делает снимок экрана и копию HTML</small></td></tr>
+  </table>
+  <p class="help" style="margin-top:8px">Ссылка на форму заявок для авторов: <code>{{ public_url }}</code></p>
+</div>
+
+<div class="grid g2">
+{% for ch, f in platform_forms.items %}
+  <div class="card">
+    <h2>{% if ch == 'vk' %}ВКонтакте{% else %}Max{% endif %}</h2>
+    {% with acc=accounts|get:ch %}{% if acc and acc.token %}<p class="msg success">Токен сохранён (зашифрован). Обновлён {{ acc.updated_at|date:"d.m.Y H:i" }}</p>{% endif %}{% endwith %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="form" value="{{ ch }}">
+      <label for="id_{{ ch }}-target_id">{% if ch == 'vk' %}ID группы (число, без минуса){% else %}ID канала (chat_id){% endif %}</label>{{ f.target_id }}
+      <label for="id_{{ ch }}-token">{% if ch == 'vk' %}Ключ доступа пользователя-администратора группы{% else %}Токен бота{% endif %}</label>{{ f.token }}
+      <div class="help">{{ f.token.help_text }}</div>
+      <label class="inline-check" style="margin-top:8px">{{ f.enabled }} Включено</label>
+      <label class="inline-check">{{ f.clear }} Удалить токен</label>
+      <p style="margin-top:10px"><button class="btn ghost">Сохранить</button></p>
+    </form>
+  </div>
+{% endfor %}
+</div>
+
+<div class="card">
+  <h2>Организация и стилевой регламент</h2>
+  <form method="post">{% csrf_token %}<input type="hidden" name="form" value="org">
+    <label for="id_org-name">Название</label>{{ form.name }}
+    <label for="id_org-style_guide">Стилевой регламент</label>{{ form.style_guide }}
+    <p class="help">Эти правила модель получает при подготовке каждого текста.</p>
+    <p style="margin-top:10px"><button class="btn">Сохранить</button></p>
+  </form>
+</div>
+{% endblock %}

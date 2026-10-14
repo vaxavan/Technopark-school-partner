@@ -1,0 +1,10 @@
+{% extends "public/base.html" %}
+{% block title %}Подать новость{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Подать информационный повод</h1>
+  <p class="muted">Выберите организацию:</p>
+  <ul>{% for o in orgs %}<li><a href="{% url 'public_form' o.code %}">{{ o.name }}</a></li>{% empty %}<li>Организации ещё не настроены.</li>{% endfor %}</ul>
+  <p><a href="{% url 'login' %}">Вход для сотрудников</a></p>
+</div>
+{% endblock %}

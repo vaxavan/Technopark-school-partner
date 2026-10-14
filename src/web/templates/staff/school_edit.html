@@ -1,0 +1,35 @@
+{% extends "staff/base.html" %}
+{% block title %}{{ school.name|default:"Новая школа" }}{% endblock %}
+{% block content %}
+<div class="head"><h1>{{ school.name|default:"Новая школа" }}</h1></div>
+<form method="post">{% csrf_token %}
+<div class="split">
+  <div class="card">
+    <h2>Карточка</h2>
+    {% for f in form %}{% if f.name == 'active' %}<label class="inline-check" style="margin-top:12px">{{ f }} {{ f.label }}</label>{% else %}<label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}{% endif %}{{ f.errors }}{% endfor %}
+    {% if school.unsubscribed_at %}<p class="msg info" style="margin-top:10px">Школа отписалась от рассылки {{ school.unsubscribed_at|date:"d.m.Y" }}. <label class="inline-check"><input type="checkbox" name="resubscribe"> Вернуть в рассылку (школа согласна)</label></p>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Где искать публикации</h2>
+    <p class="help">Порядок проверки: карта сайта → RSS → ВКонтакте → раздел сайта. Отказ одного источника не мешает остальным.</p>
+    {{ formset.management_form }}
+    {% for f in formset %}
+      <div style="border-bottom:1px solid var(--line);padding:8px 0">
+        {{ f.id }}
+        <div class="grid g3"><div>{{ f.kind.label_tag }}{{ f.kind }}</div><div style="grid-column:span 2">{{ f.url.label_tag }}{{ f.url }}</div></div>
+        {{ f.link_prefix.label_tag }}{{ f.link_prefix }}
+        {% if f.instance.pk %}<label class="inline-check">{{ f.DELETE }} удалить</label>
+          {% if f.instance.last_error %}<p class="help" style="color:var(--bad)">Ошибка: {{ f.instance.last_error|truncatechars:200 }}</p>{% elif f.instance.last_ok_at %}<p class="help">Работает, проверен {{ f.instance.last_ok_at|date:"d.m H:i" }}</p>{% endif %}{% endif %}
+        {{ f.errors }}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+<p><button class="btn">Сохранить</button> <a class="btn ghost" href="{% url 'school_list' %}">Отмена</a></p>
+</form>
+{% if found %}
+<div class="card"><h2>Найдено при последнем обходе</h2>
+  <ul class="timeline">{% for f in found %}<li><a href="{{ f.url }}" target="_blank">{{ f.title|default:f.url|truncatechars:100 }}</a> <small class="muted">· {{ f.source_kind }} · {{ f.fetched_at|date:"d.m H:i" }}</small></li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% endblock %}

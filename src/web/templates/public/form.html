@@ -1,0 +1,22 @@
+{% extends "public/base.html" %}
+{% block title %}Заявка на новость — {{ org.name }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Расскажите о событии</h1>
+  <p class="muted">Мы подготовим новость для соцсетей технопарка и сайтов школ-партнёров. Регистрация не нужна.
+    Если каких-то сведений не хватит, после отправки появятся 1–3 коротких вопроса.</p>
+  <form method="post" enctype="multipart/form-data" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for f in form %}
+      {% if f.is_hidden %}{{ f }}{% elif f.name == 'consent' %}
+        <label class="inline-check" style="margin-top:16px">{{ f }} {{ f.label }}</label>{{ f.errors }}
+      {% else %}
+        <label for="{{ f.id_for_label }}">{{ f.label }}{% if not f.field.required %} <small>(необязательно)</small>{% endif %}</label>
+        {{ f }}{% if f.help_text %}<div class="help">{{ f.help_text }}</div>{% endif %}{{ f.errors }}
+      {% endif %}
+    {% endfor %}
+    <p style="margin-top:18px"><button class="btn">Отправить заявку</button></p>
+  </form>
+</div>
+{% endblock %}
