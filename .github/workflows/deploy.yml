@@ -37,7 +37,8 @@ jobs:
             git checkout -q $BRANCH
             git reset -q --hard origin/$BRANCH
             docker compose -p technopark up -d --build --remove-orphans
-            docker image prune -f >/dev/null
+            # удаляем только старые образы этого проекта, чужие не трогаем
+            docker image prune -f --filter label=com.docker.compose.project=technopark >/dev/null
             sleep 10
             docker compose -p technopark ps
             curl -fsS -o /dev/null -w 'Проверка сайта: HTTP %{http_code}\n' http://localhost:\$(grep ^HTTP_PORT= .env | cut -d= -f2)/login/
