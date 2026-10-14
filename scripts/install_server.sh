@@ -9,7 +9,8 @@
 # Если вы входите не под root, а под пользователем с sudo (например, deploy): ... | sudo sh -s -- 8080
 set -e
 PORT="${1:-8080}"
-DIR=/opt/technopark
+# под root (или через sudo) — /opt/technopark; под обычным пользователем — ~/technopark
+if [ "$(id -u)" = "0" ]; then DIR="${DIR:-/opt/technopark}"; else DIR="${DIR:-$HOME/technopark}"; fi
 BRANCH="${BRANCH:-system-v1}"
 REPO=https://github.com/vaxavan/Technopark-school-partner.git
 
@@ -19,7 +20,9 @@ if ss -tln | grep -q ":$PORT "; then
 fi
 
 echo "== Файл подкачки (если его нет и памяти меньше 4 ГБ)"
-if [ -z "$(swapon --show)" ] && [ "$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)" -lt 3900 ]; then
+if [ "$(id -u)" != "0" ]; then
+  echo "Пропущено: нужны права root. Если памяти мало, выполните позже: sudo fallocate -l 2G /swapfile ..."
+elif [ -z "$(swapon --show)" ] && [ "$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)" -lt 3900 ]; then
   fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
   grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
   echo "Создан файл подкачки 2 ГБ"
@@ -28,7 +31,8 @@ else
 fi
 
 echo "== Код в $DIR"
-command -v git >/dev/null || (apt-get update -qq && apt-get install -y -qq git)
+command -v git >/dev/null || { [ "$(id -u)" = "0" ] && apt-get update -qq && apt-get install -y -qq git; } || { echo "Нет git: sudo apt install git"; exit 1; }
+docker info >/dev/null 2>&1 || { echo "Пользователь $(id -un) не может управлять Docker (нужна группа docker)"; exit 1; }
 if [ -d "$DIR/.git" ]; then
   git -C "$DIR" fetch -q origin "$BRANCH" && git -C "$DIR" checkout -q "$BRANCH" && git -C "$DIR" pull -q
 else
@@ -71,7 +75,7 @@ fi
 echo "== Сборка и запуск (первый раз 5–10 минут)"
 docker compose -p technopark up -d --build
 
-if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+if [ "$(id -u)" = "0" ] && command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow "$PORT"/tcp >/dev/null && echo "В ufw открыт порт $PORT"
 fi
 

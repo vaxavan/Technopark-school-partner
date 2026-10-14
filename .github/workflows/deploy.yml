@@ -32,7 +32,7 @@ jobs:
           printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "$USER@$HOST" "
             set -e
-            cd /opt/technopark
+            cd /opt/technopark 2>/dev/null || cd ~/technopark
             git fetch -q origin $BRANCH
             git checkout -q $BRANCH
             git reset -q --hard origin/$BRANCH
