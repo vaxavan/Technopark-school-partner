@@ -43,3 +43,20 @@ class Event(models.Model):
 
     def __str__(self):
         return f"{self.created_at:%d.%m %H:%M} {self.kind}"
+
+
+class LLMAccount(models.Model):
+    """Доступ к YandexGPT для организации. Ключ хранится зашифрованным; если его нет —
+    берутся YANDEX_API_KEY / YANDEX_FOLDER_ID из .env."""
+
+    organization = models.OneToOneField("accounts.Organization", on_delete=models.CASCADE, related_name="llm_account")
+    api_key = EncryptedTextField("API-ключ", blank=True)
+    folder_id = models.CharField("ID каталога", max_length=64, blank=True)
+    model = models.CharField("модель для текстов", max_length=100, blank=True,
+                             help_text="Пусто — из .env (по умолчанию yandexgpt/latest)")
+    model_lite = models.CharField("модель для уточняющих вопросов", max_length=100, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "доступ к языковой модели"
+        verbose_name_plural = "доступ к языковой модели"

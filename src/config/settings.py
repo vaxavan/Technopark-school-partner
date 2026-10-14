@@ -234,7 +234,8 @@ YANDEX_API_KEY = env("YANDEX_API_KEY")
 YANDEX_FOLDER_ID = env("YANDEX_FOLDER_ID")
 YANDEX_MODEL = env("YANDEX_MODEL", "yandexgpt/latest")
 YANDEX_MODEL_LITE = env("YANDEX_MODEL_LITE", "yandexgpt-lite/latest")
-LLM_BACKEND = env("LLM_BACKEND") or ("yandex" if YANDEX_API_KEY and YANDEX_FOLDER_ID else "fake")
+# "fake" — принудительно демо-модель; иначе ключ берётся из «Настроек» организации или из .env
+LLM_BACKEND = env("LLM_BACKEND", "yandex")
 
 VK_GROUP_ID = env("VK_GROUP_ID")
 VK_ACCESS_TOKEN = env("VK_ACCESS_TOKEN")

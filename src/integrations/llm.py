@@ -100,11 +100,38 @@ class FakeLLM:
                            "questions": questions}, ensure_ascii=False)
 
 
-def get_llm():
-    if settings.LLM_BACKEND == "yandex":
-        return YandexGPT(settings.YANDEX_API_KEY, settings.YANDEX_FOLDER_ID,
-                         settings.YANDEX_MODEL, settings.YANDEX_MODEL_LITE)
-    return FakeLLM()
+def llm_credentials(organization=None):
+    """(ключ, каталог, модель, модель_lite, источник): сначала настройки организации, затем .env."""
+    acc = None
+    if organization is not None:
+        from core.models import LLMAccount
+
+        acc = LLMAccount.objects.filter(organization=organization).first()
+    if acc and acc.api_key and acc.folder_id:
+        return (acc.api_key, acc.folder_id, acc.model or settings.YANDEX_MODEL,
+                acc.model_lite or settings.YANDEX_MODEL_LITE, "settings")
+    if settings.YANDEX_API_KEY and settings.YANDEX_FOLDER_ID:
+        return (settings.YANDEX_API_KEY, settings.YANDEX_FOLDER_ID, settings.YANDEX_MODEL,
+                settings.YANDEX_MODEL_LITE, "env")
+    return None
+
+
+def get_llm(organization=None):
+    """Модель для организации. LLM_BACKEND=fake (тесты, демо) принудительно включает демо-модель."""
+    if settings.LLM_BACKEND == "fake":
+        return FakeLLM()
+    creds = llm_credentials(organization)
+    if creds is None:
+        return FakeLLM()
+    key, folder, model, lite, _ = creds
+    return YandexGPT(key, folder, model, lite)
+
+
+def llm_mode(organization=None):
+    if settings.LLM_BACKEND == "fake":
+        return "demo"
+    creds = llm_credentials(organization)
+    return "demo" if creds is None else creds[4]
 
 
 def extract_json(text: str) -> str:

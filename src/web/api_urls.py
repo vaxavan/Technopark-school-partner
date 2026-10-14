@@ -20,6 +20,7 @@ urlpatterns = router.urls + [
     path("publications/", api.PublicationListView.as_view()),
     path("settings/", api.SettingsView.as_view()),
     path("settings/platforms/<slug:channel>/", api.PlatformSettingsView.as_view()),
+    path("settings/llm/", api.LLMSettingsView.as_view()),
     path("public/<slug:code>/", api.PublicOrgView.as_view()),
     path("public/<slug:code>/submissions/", api.PublicSubmissionCreate.as_view()),
     path("public/<slug:code>/submissions/<uuid:sid>/questions/", api.PublicSubmissionQuestions.as_view()),

@@ -44,12 +44,17 @@ class Command(BaseCommand):
         from integrations.llm import get_llm
         from submissions.clarify import Completeness
 
-        if settings.LLM_BACKEND != "yandex":
-            return self.skip("YandexGPT", "ключ не задан — работает демо-модель (YANDEX_API_KEY, YANDEX_FOLDER_ID)")
-        llm = get_llm()
+        from integrations.llm import llm_mode
+
+        org = Organization.objects.first()
+        mode = llm_mode(org)
+        if mode == "demo":
+            return self.skip("YandexGPT", "ключ не задан — работает демо-модель («Настройки» или .env)")
+        llm = get_llm(org)
         try:
             text = llm.complete("Ответь одним словом.", "Столица России?", timeout=30)
-            self.ok("YandexGPT", f"модель {settings.YANDEX_MODEL} отвечает: {text.strip()[:40]}")
+            src = "из «Настроек»" if mode == "settings" else "из .env"
+            self.ok("YandexGPT", f"ключ {src}, модель {llm.model} отвечает: {text.strip()[:40]}")
         except LLMError as exc:
             return self.bad("YandexGPT", str(exc))
         try:
@@ -58,7 +63,7 @@ class Command(BaseCommand):
             from integrations.llm import extract_json
 
             Completeness.model_validate_json(extract_json(raw))
-            self.ok("YandexGPT (JSON)", f"модель {settings.YANDEX_MODEL_LITE} возвращает ответ по схеме")
+            self.ok("YandexGPT (JSON)", f"модель {llm.model_lite} возвращает ответ по схеме")
         except Exception as exc:
             self.bad("YandexGPT (JSON)", f"{exc}")
 

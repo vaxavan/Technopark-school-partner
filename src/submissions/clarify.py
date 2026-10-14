@@ -55,7 +55,7 @@ class Completeness(BaseModel):
 
 def ask_model(submission: Submission, llm=None) -> Completeness | None:
     """Два запроса максимум; None — значит вопросы пропускаем."""
-    llm = llm or get_llm()
+    llm = llm or get_llm(submission.organization)
     user = submission.full_text_for_model()
     for attempt in range(2):
         try:

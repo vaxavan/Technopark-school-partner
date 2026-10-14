@@ -26,7 +26,7 @@ from partners.interfaces import importer, report
 from partners.interfaces.school_actions import report_link, unsubscribe
 from partners.models import FoundPublicationRecord, PlacementRecord, School, Source
 from publishing.models import PLATFORM_CHANNELS, PlatformAccount, Publication
-from publishing.services import integration_modes, save_platform_account
+from publishing.services import integration_modes, save_llm_account, save_platform_account
 from submissions import services as sub_services
 from submissions.models import Submission
 
@@ -584,11 +584,20 @@ class SettingsView(APIView):
         return {
             "organization": {"code": org.code, "name": org.name, "style_guide": org.style_guide},
             "modes": integration_modes(org),
+            "llm": self._llm(org),
             "platforms": {ch: {"target_id": accs[ch].target_id if ch in accs else "",
                                "enabled": accs[ch].enabled if ch in accs else True,
                                "has_token": bool(ch in accs and accs[ch].token)}
                           for ch in PLATFORM_CHANNELS},
         }
+
+    @staticmethod
+    def _llm(org):
+        from core.models import LLMAccount
+
+        acc = LLMAccount.objects.filter(organization=org).first()
+        return {"folder_id": acc.folder_id if acc else "", "model": acc.model if acc else "",
+                "model_lite": acc.model_lite if acc else "", "has_key": bool(acc and acc.api_key)}
 
     def get(self, request):
         return Response(self._payload(request.org))
@@ -609,4 +618,15 @@ class PlatformSettingsView(APIView):
         run(lambda: save_platform_account(request.org, channel, target_id=request.data.get("target_id"),
                                           token=request.data.get("token"), enabled=request.data.get("enabled"),
                                           clear=bool(request.data.get("clear")), actor=request.user))
+        return Response(SettingsView()._payload(request.org))
+
+
+class LLMSettingsView(APIView):
+    """PUT {"api_key", "folder_id", "model", "model_lite", "clear"} — доступ к YandexGPT."""
+    permission_classes = [IsOrgMember]
+
+    def put(self, request):
+        d = request.data
+        save_llm_account(request.org, api_key=d.get("api_key"), folder_id=d.get("folder_id"), model=d.get("model"),
+                         model_lite=d.get("model_lite"), clear=bool(d.get("clear")), actor=request.user)
         return Response(SettingsView()._payload(request.org))

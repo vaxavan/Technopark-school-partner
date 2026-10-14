@@ -79,7 +79,7 @@ def test_clarify_max_three_rounds(submission):
 
 @pytest.mark.django_db
 def test_llm_down_gives_manual_drafts(submission, admin_user, monkeypatch):
-    monkeypatch.setattr("materials.generation.get_llm", lambda: ScriptedLLM([LLMError("нет связи")]))
+    monkeypatch.setattr("materials.generation.get_llm", lambda org=None: ScriptedLLM([LLMError("нет связи")]))
     material = services.accept_submission(submission, admin_user, [Channel.VK, Channel.MAX])
     material.refresh_from_db()
     assert material.status == "on_approval" and "нет связи" in material.generation_error
@@ -160,3 +160,40 @@ def test_token_encrypted_at_rest(org):
         raw = c.fetchone()[0]
     assert raw.startswith("enc:") and "SECRET" not in raw
     assert PlatformAccount.objects.get().token == "vk1.a.SECRET"
+
+
+@pytest.mark.django_db
+def test_llm_key_from_settings_overrides_env(org, settings):
+    from core.models import LLMAccount
+    from integrations.llm import FakeLLM, YandexGPT, get_llm, llm_mode
+    from publishing.services import save_llm_account
+
+    settings.LLM_BACKEND = "yandex"
+    settings.YANDEX_API_KEY = settings.YANDEX_FOLDER_ID = ""
+    assert isinstance(get_llm(org), FakeLLM) and llm_mode(org) == "demo"
+
+    settings.YANDEX_API_KEY, settings.YANDEX_FOLDER_ID = "env-key", "b1genv"
+    assert llm_mode(org) == "env" and get_llm(org).folder_id == "b1genv"
+
+    save_llm_account(org, api_key="AQVN-org-key", folder_id="b1gorg", model="yandexgpt/rc")
+    llm = get_llm(org)
+    assert isinstance(llm, YandexGPT) and llm.api_key == "AQVN-org-key" and llm.model == "yandexgpt/rc"
+    assert llm.model_lite == settings.YANDEX_MODEL_LITE and llm_mode(org) == "settings"
+    save_llm_account(org, api_key="", folder_id="b1gorg")          # пустой ключ — не меняется
+    assert LLMAccount.objects.get().api_key == "AQVN-org-key"
+
+    settings.LLM_BACKEND = "fake"                                   # тесты и демо — всегда без сети
+    assert isinstance(get_llm(org), FakeLLM)
+
+
+@pytest.mark.django_db
+def test_llm_settings_page_and_api(client, org, admin_user):
+    client.force_login(admin_user)
+    r = client.post("/app/settings/", {"form": "llm", "llm-api_key": "AQVN-x", "llm-folder_id": "b1gx"})
+    assert r.status_code == 302
+    page = client.get("/app/settings/").content.decode()
+    assert "Ключ сохранён" in page and "AQVN-x" not in page
+    data = client.get("/api/v1/settings/").json()["llm"]
+    assert data == {"folder_id": "b1gx", "model": "", "model_lite": "", "has_key": True}
+    r = client.put("/api/v1/settings/llm/", {"clear": True}, content_type="application/json")
+    assert r.json()["llm"]["has_key"] is False

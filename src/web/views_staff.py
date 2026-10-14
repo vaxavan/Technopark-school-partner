@@ -24,13 +24,14 @@ from partners.interfaces.importer import import_schools
 from partners.interfaces.report import export_xlsx, placement_rows, summary
 from partners.models import FoundPublicationRecord, PlacementRecord, School
 from publishing.models import PLATFORM_CHANNELS, PlatformAccount, Publication
-from publishing.services import integration_modes, save_platform_account
+from publishing.services import integration_modes, save_llm_account, save_platform_account
 from submissions.models import Submission, SubmissionStatus
 
 from . import selectors
 from .forms import (
     AcceptForm,
     ApproveForm,
+    LLMForm,
     ImportForm,
     OrgSettingsForm,
     PlatformForm,
@@ -337,8 +338,20 @@ def org_settings(request):
         acc = PlatformAccount.objects.filter(organization=org, channel=ch).first()
         platform_forms[ch] = PlatformForm(request.POST or None, prefix=ch, initial={
             "target_id": acc.target_id if acc else "", "enabled": acc.enabled if acc else True})
+    from core.models import LLMAccount
+
+    llm_acc = LLMAccount.objects.filter(organization=org).first()
+    llm_form = LLMForm(request.POST or None, prefix="llm", initial={
+        "folder_id": llm_acc.folder_id if llm_acc else "", "model": llm_acc.model if llm_acc else "",
+        "model_lite": llm_acc.model_lite if llm_acc else ""})
     if request.method == "POST" and can_edit:
         which = request.POST.get("form")
+        if which == "llm" and llm_form.is_valid():
+            d = llm_form.cleaned_data
+            save_llm_account(org, api_key=d["api_key"], folder_id=d["folder_id"], model=d["model"],
+                             model_lite=d["model_lite"], clear=d["clear"], actor=request.user)
+            messages.success(request, "Настройки YandexGPT сохранены")
+            return redirect("settings")
         if which == "org" and form.is_valid():
             form.save()
             messages.success(request, "Настройки организации сохранены")
@@ -351,7 +364,8 @@ def org_settings(request):
             return redirect("settings")
     modes = integration_modes(org)
     return render(request, "staff/settings.html", {
-        "form": form, "platform_forms": platform_forms, "modes": modes,
+        "form": form, "platform_forms": platform_forms, "modes": modes, "llm_form": llm_form,
+        "llm_has_key": bool(llm_acc and llm_acc.api_key), "llm_updated": llm_acc.updated_at if llm_acc else None,
         "rss_url": modes["rss_url"], "public_url": modes["public_form_url"],
         "accounts": {a.channel: a for a in PlatformAccount.objects.filter(organization=org)},
     })

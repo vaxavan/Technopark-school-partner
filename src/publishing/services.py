@@ -181,10 +181,11 @@ def save_platform_account(organization, channel, *, target_id=None, token=None, 
 
 
 def integration_modes(organization):
+    from integrations.llm import llm_mode
     from integrations.mail import mail_mode
 
     return {
-        "llm": settings.LLM_BACKEND,
+        "llm": llm_mode(organization),
         "mail": mail_mode(),
         "vk": "demo" if platform_for(organization, Channel.VK).demo else "live",
         "max": "demo" if platform_for(organization, Channel.MAX).demo else "live",
@@ -194,3 +195,21 @@ def integration_modes(organization):
         "rss_url": f"{settings.SITE_URL}/rss/{organization.code}.xml",
         "public_form_url": f"{settings.SITE_URL}/f/{organization.code}/",
     }
+
+
+def save_llm_account(organization, *, api_key=None, folder_id=None, model=None, model_lite=None, clear=False,
+                     actor=None):
+    """Доступ к YandexGPT в «Настройках». Пустой api_key — не менять."""
+    from core.models import LLMAccount
+
+    acc, _ = LLMAccount.objects.get_or_create(organization=organization)
+    if clear:
+        acc.api_key = ""
+    elif api_key:
+        acc.api_key = api_key.strip()
+    for field, value in (("folder_id", folder_id), ("model", model), ("model_lite", model_lite)):
+        if value is not None:
+            setattr(acc, field, str(value).strip())
+    acc.save()
+    record(organization, "llm.updated", actor=actor, message="Изменены настройки языковой модели")
+    return acc

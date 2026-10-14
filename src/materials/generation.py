@@ -88,7 +88,7 @@ def clean_model_text(text):
 
 def generate_for_channel(org, channel, source_text, examples=(), llm=None):
     """(текст, замечания, число попыток)."""
-    llm = llm or get_llm()
+    llm = llm or get_llm(org)
     system = system_prompt(org, channel, examples)
     user = f"Подготовь текст по заявке.\n\nСВЕДЕНИЯ:\n{source_text}"
     text, issues = "", []
@@ -112,7 +112,7 @@ EDIT_COMMANDS = {
 
 
 def edit_with_model(org, channel, current_text, instruction, source_text, llm=None):
-    llm = llm or get_llm()
+    llm = llm or get_llm(org)
     system = system_prompt(org, channel)
     user = (f"КОМАНДА ПРАВКИ: {instruction}\nИспользуй только сведения из заявки.\n\n"
             f"ЗАЯВКА:\n{source_text}\n\nТЕКСТ:\n{current_text}")

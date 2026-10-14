@@ -121,3 +121,15 @@ class PlatformForm(forms.Form):
 
 class SchoolReportForm(forms.Form):
     url = forms.URLField(label="Ссылка на вашу публикацию", max_length=700)
+
+
+class LLMForm(forms.Form):
+    api_key = forms.CharField(label="API-ключ (AQVN…)", required=False,
+                              widget=forms.PasswordInput(render_value=False),
+                              help_text="Оставьте пустым, чтобы не менять")
+    folder_id = forms.CharField(label="ID каталога (b1g…)", max_length=64, required=False)
+    model = forms.CharField(label="Модель для текстов", max_length=100, required=False,
+                            widget=forms.TextInput(attrs={"placeholder": "yandexgpt/latest"}))
+    model_lite = forms.CharField(label="Модель для уточняющих вопросов", max_length=100, required=False,
+                                 widget=forms.TextInput(attrs={"placeholder": "yandexgpt-lite/latest"}))
+    clear = forms.BooleanField(label="Удалить ключ", required=False)
