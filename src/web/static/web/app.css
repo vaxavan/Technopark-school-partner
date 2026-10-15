@@ -175,3 +175,8 @@ details[open] > summary { margin-bottom: 8px; }
 .btn.sending::before { content: ""; width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent;
                        border-radius: 50%; animation: btn-spin .7s linear infinite; }
 @keyframes btn-spin { to { transform: rotate(360deg); } }
+
+/* список школ с галочками (поиск по сайтам школ) */
+.school-checks { max-height: 230px; overflow: auto; border: 1px solid #cdd3dc; border-radius: 8px; padding: 6px 10px; background: #fff; }
+.school-checks label { display: flex; align-items: flex-start; gap: 8px; font-weight: 400; margin: 4px 0; }
+.school-checks input { margin-top: 4px; }

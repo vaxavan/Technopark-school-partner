@@ -72,3 +72,29 @@ def send_reminders(organization_id=None):
             record(org, "partners.reminded", message=f"Отправлено напоминаний: {sent}", sent=sent)
         total += sent
     return total
+
+
+@shared_task(name="partners.tasks.run_search")
+def run_search(search_id):
+    """Раздаёт школы поиска по отдельным задачам — так видно продвижение и одна медленная школа не держит всех."""
+    from partners.models import SchoolSearchResult
+
+    ids = list(SchoolSearchResult.objects.filter(search_id=search_id, status="queued").values_list("id", flat=True))
+    for rid in ids:
+        search_school.delay(rid)
+    return len(ids)
+
+
+@shared_task(name="partners.tasks.search_school", soft_time_limit=1200, time_limit=1320)
+def search_school(result_id):
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    from partners.interfaces import search
+    from partners.models import SchoolSearchResult
+
+    try:
+        search.run_school(result_id)
+    except SoftTimeLimitExceeded:
+        r = SchoolSearchResult.objects.get(pk=result_id)
+        search._finish(r, "found" if r.hits.exists() else "unreachable",
+                       error="сайт проверялся дольше 20 минут — проверено не всё")

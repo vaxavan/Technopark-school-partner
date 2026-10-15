@@ -51,6 +51,9 @@ class AgentClient:
     def done(self, summary):
         return self._call("POST", "done/", json=summary)
 
+    def search_result(self, data, files):
+        return self._call("POST", "search-result/", data=data, files=files)
+
 
 def _item(f):
     return {"url": f.url, "title": f.title[:500], "text": f.text[:MAX_TEXT], "source_kind": f.source_kind.value,
@@ -87,6 +90,9 @@ def run_once(server, token, log=print, crawler=None, client=None):
         total["confirmed"] += report.get("confirmed", 0)
         total["disputed"] += report.get("disputed", 0)
     total["errors"] = total["errors"][:30]
+    searches = data.get("searches") or []
+    if searches:
+        total["searches"] = run_searches(client, searches, log)
     client.done(total)
     log(f"Готово: школ {total['schools']}, источников открылось {total['sources_ok']}, "
         f"не открылось {total['sources_failed']}; подтверждено {total['confirmed']}, "
@@ -102,3 +108,94 @@ def run_forever(server, token, every_hours, log=print):
             log(f"Ошибка: {exc}")
         log(f"Следующий обход через {every_hours} ч.")
         time.sleep(every_hours * 3600)
+
+
+# ---------- поиск по теме («битва роботов») по сайтам школ
+
+class LocalSnapshotter:
+    """Снимок страницы на компьютере агента. Нужен Playwright:
+    pip install playwright && python -m playwright install chromium. Без него — только копия HTML."""
+
+    def __init__(self):
+        self.pw = self.browser = None
+        try:
+            from playwright.sync_api import sync_playwright
+
+            self.pw = sync_playwright().start()
+            self.browser = self.pw.chromium.launch()
+        except Exception:  # Playwright не установлен — снимков не будет, копии страниц будут
+            self.close()
+
+    def capture(self, url):
+        if self.browser is None:
+            return None
+        try:
+            page = self.browser.new_page(viewport={"width": 1280, "height": 900}, locale="ru-RU")
+            page.goto(url, wait_until="networkidle", timeout=45000)
+            png = page.screenshot(full_page=True, type="jpeg", quality=75)
+            page.close()
+            return png
+        except Exception:
+            return None
+
+    def close(self):
+        for x in (self.browser, self.pw):
+            try:
+                if x is not None:
+                    (x.close if x is self.browser else x.stop)()
+            except Exception:
+                pass
+        self.browser = self.pw = None
+
+
+def run_searches(client, searches, log=print, explorer_factory=None, snapshotter=None):
+    import json
+    from datetime import datetime
+
+    from partners.domain.topic import TopicQuery
+    from partners.infrastructure.explorer import SiteExplorer
+
+    log(f"Поиск по теме: школ к проверке {len(searches)}")
+    snap = snapshotter if snapshotter is not None else (
+        LocalSnapshotter() if any(t.get("screenshots") for t in searches) else None)
+    found = 0
+    try:
+        for task in searches:
+            query = TopicQuery(task["query"])
+            since = datetime.fromisoformat(task["since"] + "T00:00:00+00:00") if task.get("since") else None
+            sources = [Source(id=x["id"], kind=SourceKind(x["kind"]), url=x["url"], link_prefix=x.get("link_prefix", ""))
+                       for x in task.get("sources", [])]
+            explorer = explorer_factory() if explorer_factory else SiteExplorer()
+            started = time.monotonic()
+            try:
+                report = explorer.explore(task.get("site", ""), sources, query, since)
+            except Exception as exc:
+                client.search_result({"result_id": task["result_id"], "status": "unreachable",
+                                      "error": str(exc)[:1000], "hits": "[]"}, files={})
+                log(f"  {task['school'][:60]}: ошибка: {exc}")
+                continue
+            hits, files = [], {}
+            for page in report.pages:
+                m = query.match(page.title, page.text)
+                if m is None:
+                    continue
+                i = len(hits)
+                hits.append({"url": page.url, "title": page.title, "snippet": m.snippet, "score": m.score,
+                             "published_at": page.published_at.isoformat() if page.published_at else None})
+                if page.html:
+                    files[f"html_{i}"] = (f"{i}.html", page.html.encode("utf-8"), "text/html")
+                shot = snap.capture(page.url) if (snap is not None and task.get("screenshots")) else None
+                if shot:
+                    files[f"shot_{i}"] = (f"{i}.jpg", shot, "image/jpeg")
+            status = "found" if hits else ("unreachable" if report.unreachable or
+                                           (not report.pages and report.errors) else "none")
+            client.search_result({"result_id": task["result_id"], "status": status, "pages_read": report.read,
+                                  "error": "; ".join(report.errors[:5])[:1000] if status != "found" else "",
+                                  "hits": json.dumps(hits, ensure_ascii=False)}, files=files)
+            found += bool(hits)
+            log(f"  {task['school'][:60]}: найдено {len(hits)}, прочитано страниц {report.read} "
+                f"({time.monotonic() - started:.0f} с)")
+    finally:
+        if snap is not None and hasattr(snap, "close"):
+            snap.close()
+    return {"schools": len(searches), "found": found}

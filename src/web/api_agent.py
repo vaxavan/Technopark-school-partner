@@ -44,7 +44,26 @@ class AgentTasksView(AgentView):
                    .select_related("school").order_by("school_id", "id"))
         return Response({"organization": agent.organization.name, "sources": [
             {"id": s.id, "school_id": s.school_id, "school": s.school.name, "kind": s.kind, "url": s.url,
-             "link_prefix": s.link_prefix} for s in sources]})
+             "link_prefix": s.link_prefix} for s in sources], "searches": self._searches(agent)})
+
+    @staticmethod
+    def _searches(agent):
+        """Поиски по теме, которые ждут агента: по каждой школе — сайт и источники."""
+        from partners.interfaces.search import school_site
+        from partners.models import SchoolSearchResult
+
+        items = []
+        results = (SchoolSearchResult.objects.filter(search__organization=agent.organization, search__status="agent",
+                                                     status="queued")
+                   .select_related("search", "school").prefetch_related("school__sources"))
+        for r in results:
+            items.append({"result_id": r.id, "query": r.search.query,
+                          "since": r.search.since.isoformat() if r.search.since else None,
+                          "screenshots": r.search.screenshots, "school": r.school.name,
+                          "site": school_site(r.school),
+                          "sources": [{"id": s.id, "kind": s.kind, "url": s.url, "link_prefix": s.link_prefix}
+                                      for s in r.school.sources.all() if s.kind != SourceKind.VK.value]})
+        return items
 
 
 def _parse_item(raw, kind):
@@ -97,3 +116,21 @@ class AgentDoneView(AgentView):
         record(agent.organization, "partners.crawled", message=f"Обход агентом: {summary}",
                agent=True, errors=[str(e)[:300] for e in (d.get("errors") or [])][:30])
         return Response({"ok": True})
+
+
+class AgentSearchResultView(AgentView):
+    """Итог поиска по одной школе от агента: поля (status, pages_read, error, hits — JSON) и файлы
+    shot_N / html_N — снимок и копия N-й найденной страницы. multipart, чтобы снимки не раздували JSON."""
+
+    def post(self, request):
+        from partners.interfaces.search import save_agent_result
+        from partners.models import SchoolSearchResult
+
+        agent = self.agent(request)
+        result = SchoolSearchResult.objects.filter(pk=request.data.get("result_id"),
+                                                   search__organization=agent.organization,
+                                                   status__in=["queued", "running"]).first()
+        if result is None:
+            raise ValidationError({"result_id": "Нет такой проверки или она уже завершена"})
+        save_agent_result(result, request.data, request.FILES)
+        return Response({"status": result.status, "hits": result.hits_count})

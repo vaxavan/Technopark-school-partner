@@ -2,6 +2,7 @@ from django.contrib.auth import views as auth_views
 from django.urls import path
 
 from . import views_public as pub
+from . import views_search as search
 from . import views_staff as staff
 
 urlpatterns = [
@@ -36,6 +37,12 @@ urlpatterns = [
     path("app/schools/<int:pk>/check/", staff.school_check, name="school_check"),
     path("app/report/", staff.partners_report, name="partners_report"),
     path("app/report/crawl/", staff.crawl_now, name="crawl_now"),
+    path("app/report/zip/", search.report_zip, name="report_zip"),
+    path("app/search/", search.search_list, name="search_list"),
+    path("app/search/<int:pk>/", search.search_detail, name="search_detail"),
+    path("app/search/<int:pk>/xlsx/", search.search_xlsx, name="search_xlsx"),
+    path("app/search/<int:pk>/zip/", search.search_zip, name="search_zip"),
+    path("app/search/<int:pk>/delete/", search.search_delete, name="search_delete"),
     path("app/placements/<int:pk>/resolve/", staff.placement_resolve, name="placement_resolve"),
     path("app/events/", staff.events, name="events"),
     path("app/settings/", staff.org_settings, name="settings"),

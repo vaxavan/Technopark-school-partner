@@ -4,7 +4,7 @@
 #   ./prod.sh update   — забрать новую версию из git и перезапустить
 #   ./prod.sh logs     — журналы (Ctrl+C — выход)
 #   ./prod.sh check    — проверить подключения (YandexGPT, почта, ВК, Max, сайты школ)
-#   ./prod.sh backup   — сделать резервную копию базы прямо сейчас
+#   ./prod.sh backup   — резервная копия базы и файлов (фото, снимки) прямо сейчас
 #   ./prod.sh restore backups/db-2026-10-14.sql.gz — восстановить базу из копии
 set -e
 cd "$(dirname "$0")"
@@ -18,7 +18,8 @@ case "$1" in
   update)  git pull && $DC up -d --build && $DC ps ;;
   logs)    $DC logs -f --tail=100 ${2:-} ;;
   check)   $DC exec web python manage.py check_integrations ;;
-  backup)  mkdir -p backups && $DC exec -T db pg_dump -U technopark technopark | gzip > "backups/db-$(date +%F-%H%M).sql.gz" && ls -lh backups | tail -3 ;;
+  backup)  mkdir -p backups && $DC exec -T db pg_dump -U technopark technopark | gzip > "backups/db-$(date +%F-%H%M).sql.gz" \
+             && $DC exec -T web tar czf - -C /app media > "backups/media-$(date +%F-%H%M).tar.gz" && ls -lh backups | tail -4 ;;
   restore) [ -f "$2" ] || { echo "Укажите файл копии"; exit 1; }
            $DC stop web worker beat
            gunzip -c "$2" | $DC exec -T db psql -U technopark -d technopark -q -v ON_ERROR_STOP=1 \

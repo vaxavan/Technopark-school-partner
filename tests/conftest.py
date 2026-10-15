@@ -25,6 +25,7 @@ def _env(settings, monkeypatch, tmp_path):
             return Snapshot(png=b"\x89PNG fake", html=f"<html>{url}</html>")
 
     monkeypatch.setattr("publishing.evidence.get_snapshotter", lambda: FakeSnap())
+    monkeypatch.setattr("integrations.snapshot.get_snapshotter", lambda: FakeSnap())
 
 
 @pytest.fixture

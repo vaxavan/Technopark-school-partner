@@ -13,6 +13,9 @@ TONE = {
     "publishing": "b-info", "failed": "b-bad", "needs_check": "b-bad",
     # размещения
     "expected": "", "confirmed": "b-ok", "disputed": "b-warn", "not_found": "b-bad",
+    # поиск по сайтам школ
+    "found": "b-ok", "none": "b-bad", "unreachable": "b-warn", "no_site": "", "queued": "", "running": "b-info",
+    "agent": "b-warn", "done": "b-ok", "cancelled": "",
 }
 
 

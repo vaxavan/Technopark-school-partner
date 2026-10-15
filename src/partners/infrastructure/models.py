@@ -142,3 +142,79 @@ class CrawlAgent(models.Model):
         from datetime import timedelta
 
         return bool(self.last_seen_at and timezone.now() - self.last_seen_at < timedelta(hours=36))
+
+
+def search_file_path(instance, filename):
+    r = instance.result
+    return f"searches/{r.search.organization.code}/{r.search_id}/{r.school_id}/{filename}"
+
+
+class SchoolSearch(models.Model):
+    """Поиск по сайтам школ: есть ли у школ публикации на тему (например, «битва роботов»)."""
+
+    STATUS_CHOICES = [("queued", "В очереди"), ("running", "Идёт"), ("agent", "Ждёт агента обхода"),
+                      ("done", "Готово"), ("cancelled", "Остановлен")]
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.CASCADE, related_name="searches")
+    query = models.CharField("что ищем", max_length=300)
+    since = models.DateField("публикации не раньше", null=True, blank=True)
+    screenshots = models.BooleanField("сохранять снимки страниц", default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(default=timezone.now)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="queued")
+
+    class Meta:
+        app_label = "partners"
+        verbose_name = "поиск по сайтам школ"
+        verbose_name_plural = "поиски по сайтам школ"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"«{self.query}» от {timezone.localtime(self.created_at):%d.%m.%Y %H:%M}"
+
+
+class SchoolSearchResult(models.Model):
+    """Итог поиска по одной школе."""
+
+    STATUS_CHOICES = [("queued", "Ждёт"), ("running", "Проверяется"), ("found", "Есть"), ("none", "Нет"),
+                      ("unreachable", "Сайт не открылся"), ("no_site", "Нет адреса сайта")]
+
+    search = models.ForeignKey(SchoolSearch, on_delete=models.CASCADE, related_name="results")
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="search_results")
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="queued")
+    pages_read = models.PositiveIntegerField(default=0)
+    hits_count = models.PositiveIntegerField(default=0)
+    error = models.TextField(blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    checked_by_agent = models.BooleanField(default=False)
+
+    class Meta:
+        app_label = "partners"
+        ordering = ["school__number", "school__name"]
+        constraints = [models.UniqueConstraint(fields=["search", "school"], name="uniq_search_school")]
+
+    @property
+    def is_finished(self):
+        return self.status not in ("queued", "running")
+
+
+class SchoolSearchHit(models.Model):
+    """Найденная публикация: ссылка, заголовок, дата, фрагмент и доказательство (снимок, копия страницы)."""
+
+    result = models.ForeignKey(SchoolSearchResult, on_delete=models.CASCADE, related_name="hits")
+    url = models.URLField(max_length=700)
+    title = models.CharField(max_length=500, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    snippet = models.TextField(blank=True)
+    score = models.FloatField(default=0)
+    screenshot = models.FileField(upload_to=search_file_path, blank=True)
+    html_copy = models.FileField(upload_to=search_file_path, blank=True)
+    checksum = models.CharField("SHA-256 копии", max_length=64, blank=True)
+    captured_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        app_label = "partners"
+        ordering = ["-score", "-published_at"]
+        constraints = [models.UniqueConstraint(fields=["result", "url"], name="uniq_hit_url")]

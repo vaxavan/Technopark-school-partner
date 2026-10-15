@@ -1,6 +1,6 @@
 from rest_framework.routers import DefaultRouter
 
-from . import api, api_agent
+from . import api, api_agent, api_search
 
 router = DefaultRouter()
 router.register("submissions", api.SubmissionViewSet, basename="submission")
@@ -27,7 +27,11 @@ urlpatterns = router.urls + [
     path("public/<slug:code>/submissions/<uuid:sid>/questions/", api.PublicSubmissionQuestions.as_view()),
     path("public/<slug:code>/submissions/<uuid:sid>/add/", api.PublicSubmissionAdd.as_view()),
     path("public/school-link/<str:token>/", api.SchoolLinkView.as_view()),
+    path("searches/", api_search.SearchListView.as_view()),
+    path("searches/<int:pk>/", api_search.SearchDetailView.as_view()),
+    path("searches/<int:pk>/<str:fmt>/", api_search.SearchExportView.as_view()),
     path("agent/tasks/", api_agent.AgentTasksView.as_view()),
     path("agent/results/", api_agent.AgentResultsView.as_view()),
     path("agent/done/", api_agent.AgentDoneView.as_view()),
+    path("agent/search-result/", api_agent.AgentSearchResultView.as_view()),
 ]

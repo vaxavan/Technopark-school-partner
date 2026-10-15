@@ -7,6 +7,7 @@
   <div class="actions">
     <form method="post" action="{% url 'crawl_now' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn ghost">Проверить сейчас</button></form>
     <a class="btn" href="?{% if material %}m={{ material.public_id }}&{% endif %}export=1">Выгрузить в Excel</a>
+    <a class="btn ghost" href="{% url 'report_zip' %}{% if material %}?m={{ material.public_id }}{% endif %}">Снимки (ZIP)</a>
   </div>
 </div>
 

@@ -19,6 +19,7 @@
       <a href="{% url 'calendar' %}" class="{% if u == 'calendar' %}on{% endif %}">Расписание</a>
       <div class="sep"></div>
       <a href="{% url 'partners_report' %}" class="{% if u == 'partners_report' %}on{% endif %}">Отчёт по школам</a>
+      <a href="{% url 'search_list' %}" class="{% if 'search' in u %}on{% endif %}">Поиск по сайтам школ</a>
       <a href="{% url 'school_list' %}" class="{% if 'school' in u %}on{% endif %}">Справочник школ</a>
       <div class="sep"></div>
       <a href="{% url 'events' %}" class="{% if u == 'events' %}on{% endif %}">Журнал</a>

@@ -134,3 +134,23 @@ class LLMForm(forms.Form):
     model_lite = forms.CharField(label="Модель для уточняющих вопросов", max_length=100, required=False,
                                  widget=forms.TextInput(attrs={"placeholder": "yandexgpt-lite/latest"}))
     clear = forms.BooleanField(label="Удалить ключ", required=False)
+
+
+class SchoolSearchForm(forms.Form):
+    query = forms.CharField(label="Что ищем", max_length=300, widget=forms.TextInput(attrs={
+        "placeholder": "битва роботов"}),
+        help_text="Слово или фраза; можно несколько через запятую — найдём любую. Окончания не важны: "
+                  "«битва роботов» найдёт и «битве роботов».")
+    since = forms.DateField(label="Публикации не раньше", required=False,
+                            widget=forms.DateInput(attrs={"type": "date"}),
+                            help_text="Пусто — за всё время, сколько удастся найти на сайте")
+    schools = forms.ModelMultipleChoiceField(label="Школы", queryset=School.objects.none(), required=False,
+                                             widget=forms.CheckboxSelectMultiple,
+                                             help_text="Ничего не отмечено — все активные школы")
+    screenshots = forms.BooleanField(label="Сохранять снимки найденных страниц", required=False, initial=True)
+    on_server = forms.BooleanField(label="Проверять с сервера, даже если работает агент обхода", required=False)
+
+    def __init__(self, *args, org=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["schools"].queryset = School.objects.filter(organization=org, active=True).order_by(
+            "number", "name")
