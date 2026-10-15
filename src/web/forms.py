@@ -51,6 +51,7 @@ class SubmissionForm(forms.Form):
     consent = forms.BooleanField(label="Согласен(а) на обработку персональных данных для рассмотрения заявки "
                                        "и связи со мной (152-ФЗ)")
     website = forms.CharField(required=False, widget=forms.HiddenInput)  # ловушка для ботов
+    form_token = forms.UUIDField(required=False, widget=forms.HiddenInput)  # защита от повторной отправки
 
 
 class AddInfoForm(forms.Form):

@@ -179,6 +179,18 @@ class TelegramPlatform:
         text = text[: self.TEXT_LIMIT]
         images = image_paths[:10]
         caption_fits = len(text) <= self.CAPTION_LIMIT
+        try:
+            return self._publish(text, images, caption_fits)
+        except PlatformError as exc:
+            fatal = ("401", "403", "chat not found", "недоступен", "слишком много")
+            if not images or any(x in str(exc) for x in fatal):
+                raise
+            # Telegram не принял фото (больше 10 МБ, формат HEIC и т. п.) — публикуем хотя бы текст
+            log.warning("Telegram не принял фото, публикуем текст без фото: %s", exc)
+            msg = self._call("sendMessage", data={"chat_id": self.chat_id, "text": text})
+            return PostResult(external_id=str(msg.get("message_id")), url=self.post_url(msg), raw=msg)
+
+    def _publish(self, text, images, caption_fits):
         handles = [open(p, "rb") for p in images]
         try:
             if len(handles) == 1:

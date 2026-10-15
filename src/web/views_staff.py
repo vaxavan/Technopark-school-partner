@@ -2,6 +2,7 @@
 
 from functools import wraps
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
@@ -9,6 +10,7 @@ from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from accounts.access import SESSION_KEY, AccessDenied, memberships_of
@@ -61,6 +63,12 @@ def _act(request, fn, ok_message):
         return None
     messages.success(request, ok_message)
     return result or True
+
+
+def _safe_next(request, default):
+    """Адрес возврата только внутри сайта — иначе ссылка могла бы увести на чужой сайт."""
+    nxt = request.POST.get("next", "")
+    return nxt if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}) else default
 
 
 @login_required
@@ -169,8 +177,13 @@ def material_detail(request, mid):
                  "Материал отклонён")
         elif action == "regenerate":
             _act(request, lambda: services.regenerate(material, user), "Тексты готовятся заново")
+        elif action == "stop_generation":
+            _act(request, lambda: services.stop_generation(material, user), "Созданы черновики для ручной правки")
         elif action == "unschedule":
             _act(request, lambda: services.unschedule(material, user), "Снято с публикации")
+        elif action == "drop_channel":
+            _act(request, lambda: services.drop_channel(material, request.POST.get("publication_id"), user),
+                 "Площадка убрана из материала")
         elif action == "retry":
             _act(request, lambda: services.retry_publication(material, user), "Публикация будет повторена")
         elif action == "mark_published":
@@ -188,7 +201,10 @@ def material_detail(request, mid):
              "warn": bool(variants.get(c) and variants[c].checks)} for c in material.channels]
     approve_form = ApproveForm(role=request.role, initial={
         "scheduled_at": timezone.localtime(timezone.now() + timezone.timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M")})
+    preparing_stuck = (material.status == MaterialStatus.PREPARING
+                       and timezone.now() - material.updated_at > services.PREPARING_STUCK_AFTER)
     return render(request, "staff/material_detail.html", {
+        "preparing_stuck": preparing_stuck,
         "material": material, "sub": material.submission, "channel": channel, "channel_label": Channel(channel).label
         if channel in Channel.values else channel, "current": current, "limit_lo": lo, "limit_hi": hi, "hint": hint,
         "tabs": tabs, "history": material.variants.filter(channel=channel).order_by("-version"),
@@ -266,9 +282,9 @@ def school_check(request, pk):
     from partners.tasks import crawl_all
 
     school = get_object_or_404(School, organization=request.org, pk=pk)
-    crawl_all.delay(request.org.id, school.id)
+    crawl_all.delay(request.org.id, school.id, force=True)
     messages.success(request, f"Проверка «{school.name}» запущена")
-    return redirect(request.POST.get("next") or "school_list")
+    return redirect(_safe_next(request, "school_list"))
 
 
 # ---------- Отчёт по школам ----------
@@ -299,14 +315,15 @@ def partners_report(request):
 def placement_resolve(request, pk):
     placement = get_object_or_404(PlacementRecord, organization=request.org, pk=pk)
     accept = request.POST.get("decision") == "accept"
-    _act(request, lambda: container.resolve_disputed()(placement.id, accept=accept,
+    done = _act(request, lambda: container.resolve_disputed()(placement.id, accept=accept,
                                                          url=request.POST.get("url", "").strip(),
                                                          note=request.POST.get("note", ""),
                                                          user_id=request.user.id),
          "Размещение подтверждено" if accept else "Совпадение отклонено, школа остаётся в ожидании")
-    record(request.org, "placement.resolved", actor=request.user, obj=placement.material,
-           message=f"{placement.school.name}: {'подтверждено' if accept else 'отклонено'} вручную")
-    return redirect(request.POST.get("next") or "partners_report")
+    if done:
+        record(request.org, "placement.resolved", actor=request.user, obj=placement.material,
+               message=f"{placement.school.name}: {'подтверждено' if accept else 'отклонено'} вручную")
+    return redirect(_safe_next(request, "partners_report"))
 
 
 @staff_required
@@ -314,9 +331,9 @@ def placement_resolve(request, pk):
 def crawl_now(request):
     from partners.tasks import crawl_all
 
-    crawl_all.delay(request.org.id)
+    crawl_all.delay(request.org.id, force=True)
     messages.success(request, "Обход сайтов школ запущен. Результат появится через несколько минут.")
-    return redirect(request.POST.get("next") or "partners_report")
+    return redirect(_safe_next(request, "partners_report"))
 
 
 # ---------- Журнал и настройки ----------
@@ -344,8 +361,19 @@ def org_settings(request):
     llm_form = LLMForm(request.POST or None, prefix="llm", initial={
         "folder_id": llm_acc.folder_id if llm_acc else "", "model": llm_acc.model if llm_acc else "",
         "model_lite": llm_acc.model_lite if llm_acc else ""})
+    from partners.models import CrawlAgent
+
+    agent = CrawlAgent.objects.filter(organization=org).first()
     if request.method == "POST" and can_edit:
         which = request.POST.get("form")
+        if which == "agent":
+            if request.POST.get("action") == "revoke":
+                CrawlAgent.objects.filter(organization=org).delete()
+                messages.success(request, "Ключ агента удалён — сайты школ снова проверяет сервер")
+            else:
+                request.session["agent_token"] = CrawlAgent.issue(org)
+                messages.success(request, "Новый ключ агента создан. Скопируйте его сейчас — позже он не показывается")
+            return redirect("settings")
         if which == "llm" and llm_form.is_valid():
             d = llm_form.cleaned_data
             save_llm_account(org, api_key=d["api_key"], folder_id=d["folder_id"], model=d["model"],
@@ -368,4 +396,6 @@ def org_settings(request):
         "llm_has_key": bool(llm_acc and llm_acc.api_key), "llm_updated": llm_acc.updated_at if llm_acc else None,
         "rss_url": modes["rss_url"], "public_url": modes["public_form_url"],
         "accounts": {a.channel: a for a in PlatformAccount.objects.filter(organization=org)},
+        "agent": agent, "agent_token": request.session.pop("agent_token", None),
+        "site_url": settings.SITE_URL,
     })

@@ -11,7 +11,9 @@ from partners import container
 log = logging.getLogger(__name__)
 
 
-@shared_task
+# Имена заданы явно: задачи лежат в partners.interfaces.tasks, а расписание (settings.CELERY_BEAT_SCHEDULE)
+# и Celery обращаются к ним как partners.tasks.* — без явного имени задача «не зарегистрирована».
+@shared_task(name="partners.tasks.dispatch_material")
 def dispatch_material(material_id):
     from materials.models import Material
 
@@ -24,20 +26,43 @@ def dispatch_material(material_id):
     return report.sent
 
 
-@shared_task
-def crawl_all(organization_id=None, school_id=None):
-    report = container.detect_placement()(organization_id, partner_id=school_id)
+@shared_task(name="partners.tasks.crawl_all")
+def crawl_all(organization_id=None, school_id=None, force=False):
+    """Обход по организациям. Если у организации работает агент обхода (отчитывался за последние
+    36 часов), сервер её не обходит — сайты школ проверяет агент. force=True — обойти всё равно
+    (кнопка «Проверить сейчас» в интерфейсе)."""
+    from partners.models import CrawlAgent
+
     orgs = Organization.objects.filter(pk=organization_id) if organization_id else Organization.objects.all()
+    checked = 0
     for org in orgs:
+        agent = CrawlAgent.objects.filter(organization=org).first()
+        if agent and agent.is_active and not force:
+            continue
+        report = container.detect_placement()(org.id, partner_id=school_id)
+        checked += report.checked
+        if not report.checked:
+            continue
         record(org, "partners.crawled",
                message=f"Проверено размещений: {report.checked}; подтверждено: {report.confirmed}; "
-                       f"требует решения: {report.disputed}; ошибок источников: {len(report.source_errors)}",
+                       f"требует решения: {report.disputed}; не проверено (сайт не открылся): {report.unchecked}; "
+                       f"ошибок источников: {len(report.source_errors)}",
                checked=report.checked, confirmed=report.confirmed, disputed=report.disputed,
-               source_errors=report.source_errors[:50])
-    return report.checked
+               unchecked=report.unchecked, source_errors=report.source_errors[:50])
+    return checked
 
 
-@shared_task
+@shared_task(name="partners.tasks.capture_school_evidence", autoretry_for=(Exception,), retry_backoff=120,
+             max_retries=2)
+def capture_school_evidence(material_id, school_id, url):
+    from materials.models import Material
+    from publishing.evidence import capture_evidence
+
+    material = Material.objects.select_related("organization").get(pk=material_id)
+    capture_evidence(material.organization, material, url, school_id=school_id, note="размещение у школы")
+
+
+@shared_task(name="partners.tasks.send_reminders")
 def send_reminders(organization_id=None):
     total = 0
     orgs = Organization.objects.filter(pk=organization_id) if organization_id else Organization.objects.all()

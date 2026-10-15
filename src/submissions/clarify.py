@@ -1,6 +1,6 @@
 """Уточняющие вопросы автору (рисунок 6 и приложение А отчёта).
 
-Не более трёх раундов. Модель возвращает JSON по схеме; ответ проверяется pydantic.
+Не более двух раундов. Модель возвращает JSON по схеме; ответ проверяется pydantic.
 Если модель не ответила за 15 секунд или дважды ответила не по схеме — вопросы
 пропускаются, и заявка уходит администратору как есть."""
 
@@ -17,7 +17,7 @@ from .models import ClarificationRound, Submission
 
 log = logging.getLogger(__name__)
 
-MAX_ROUNDS = 3
+MAX_ROUNDS = 2
 TIMEOUT_SECONDS = 15
 
 SYSTEM = """Ты помощник редакции технопарка. Тебе дают заявку на новость. Проверь, хватает ли сведений
@@ -57,6 +57,9 @@ def ask_model(submission: Submission, llm=None) -> Completeness | None:
     """Два запроса максимум; None — значит вопросы пропускаем."""
     llm = llm or get_llm(submission.organization)
     user = submission.full_text_for_model()
+    if submission.rounds.count() >= MAX_ROUNDS - 1:
+        user += ("\n\nЭто последняя возможность что-то уточнить: спроси только о самом важном "
+                 "(не больше двух вопросов) или верни complete: true.")
     for attempt in range(2):
         try:
             reply = llm.complete(SYSTEM, user, json_mode=True, lite=True, timeout=TIMEOUT_SECONDS, temperature=0.1)

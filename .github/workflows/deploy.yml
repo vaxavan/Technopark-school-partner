@@ -36,10 +36,12 @@ jobs:
             git fetch -q origin $BRANCH
             git checkout -q $BRANCH
             git reset -q --hard origin/$BRANCH
+            # файлы compose берутся из COMPOSE_FILE в .env (с доменом — вместе с docker-compose.prod.yml)
             docker compose -p technopark up -d --build --remove-orphans
             # удаляем только старые образы этого проекта, чужие не трогаем
             docker image prune -f --filter label=com.docker.compose.project=technopark >/dev/null
-            sleep 10
+            sleep 15
             docker compose -p technopark ps
-            curl -fsS -o /dev/null -w 'Проверка сайта: HTTP %{http_code}\n' http://localhost:\$(grep ^HTTP_PORT= .env | cut -d= -f2)/login/
+            # проверка изнутри nginx — работает и с портом, и с доменом
+            docker compose -p technopark exec -T nginx wget -q -O /dev/null http://localhost/login/ && echo 'Проверка сайта: OK'
           "

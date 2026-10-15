@@ -97,3 +97,48 @@ class PlacementRecord(models.Model):
         verbose_name = "размещение"
         verbose_name_plural = "размещения"
         constraints = [models.UniqueConstraint(fields=["material", "school"], name="uniq_placement")]
+
+
+class CrawlAgent(models.Model):
+    """Агент обхода: программа на компьютере, с которого сайты школ открываются (например, в офисе),
+    если сервер они не пускают. Агент берёт список источников, сам скачивает страницы и
+    присылает найденное; сверку и решения делает сервер. В базе хранится только отпечаток ключа."""
+
+    organization = models.OneToOneField("accounts.Organization", on_delete=models.CASCADE, related_name="crawl_agent")
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    last_summary = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        app_label = "partners"
+        verbose_name = "агент обхода"
+        verbose_name_plural = "агенты обхода"
+
+    @staticmethod
+    def hash(token):
+        import hashlib
+
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    @classmethod
+    def issue(cls, organization):
+        """Новый ключ (старый перестаёт работать). Возвращает ключ — он показывается один раз."""
+        token = "agt_" + secrets.token_urlsafe(32)
+        cls.objects.update_or_create(organization=organization,
+                                     defaults={"token_hash": cls.hash(token), "created_at": timezone.now(),
+                                               "last_seen_at": None, "last_summary": ""})
+        return token
+
+    @classmethod
+    def by_token(cls, token):
+        if not token:
+            return None
+        return cls.objects.select_related("organization").filter(token_hash=cls.hash(token)).first()
+
+    @property
+    def is_active(self):
+        """Агент отчитывался недавно — значит, обход этой организации выполняет он."""
+        from datetime import timedelta
+
+        return bool(self.last_seen_at and timezone.now() - self.last_seen_at < timedelta(hours=36))

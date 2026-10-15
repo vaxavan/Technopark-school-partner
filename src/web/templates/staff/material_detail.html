@@ -14,8 +14,14 @@
 </div>
 
 {% if material.status == 'preparing' %}
-  <div class="msg info">Модель готовит тексты. Страница обновится сама.</div>
-  <script>setTimeout(function(){ location.reload(); }, 5000);</script>
+  {% if preparing_stuck %}
+    <div class="msg error">Тексты готовятся дольше 10 минут — похоже, подготовка прервалась.
+      <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="stop_generation">
+        <button class="btn small">Перейти к ручной правке</button></form></div>
+  {% else %}
+    <div class="msg info">Модель готовит тексты. Страница обновится сама.</div>
+    <script>setTimeout(function(){ location.reload(); }, 5000);</script>
+  {% endif %}
 {% endif %}
 {% if material.generation_error %}<div class="msg error">Модель была недоступна: {{ material.generation_error }}. Тексты нужно подготовить вручную — черновики созданы из заявки.</div>{% endif %}
 
@@ -104,7 +110,9 @@
           <td>{% badge p.status p.get_status_display %}{% if p.error %}<br><small class="muted">{{ p.error }}</small>{% endif %}
             {% if p.status == 'needs_check' or p.status == 'failed' %}
             <form method="post" class="actions" style="margin-top:6px">{% csrf_token %}<input type="hidden" name="action" value="mark_published"><input type="hidden" name="publication_id" value="{{ p.id }}">
-              <input type="url" name="url" placeholder="ссылка на вышедший пост" style="width:200px"><button class="btn ghost small">Вышло</button></form>{% endif %}
+              <input type="url" name="url" placeholder="ссылка на вышедший пост" style="width:200px"><button class="btn ghost small">Вышло</button></form>
+            {% if p.status == 'needs_check' %}<small class="muted">Сначала проверьте площадку: если пост вышел — «Вышло», если нет — «Повторить публикацию».</small>{% endif %}
+            <form method="post" style="margin-top:4px" onsubmit="return confirm('Не публиковать материал на этой площадке?')">{% csrf_token %}<input type="hidden" name="action" value="drop_channel"><input type="hidden" name="publication_id" value="{{ p.id }}"><button class="btn danger small">Не публиковать здесь</button></form>{% endif %}
           </td>
           <td>{{ p.published_at|default:p.scheduled_at|date:"d.m H:i" }}{% if p.url %}<br><a href="{{ p.url }}" target="_blank">открыть</a>{% endif %}</td>
           <td>{% for e in p.evidence.all %}{% if e.screenshot %}<a href="{{ e.screenshot.url }}" target="_blank">снимок</a> · {% endif %}{% if e.html_copy %}<a href="{{ e.html_copy.url }}" target="_blank">копия</a>{% endif %}<br><small title="SHA-256">{{ e.checksum|truncatechars:14 }}</small>{% empty %}<small class="muted">—</small>{% endfor %}</td>

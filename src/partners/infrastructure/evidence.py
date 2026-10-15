@@ -1,12 +1,13 @@
-"""Адаптер «Доказательства» для модуля partners."""
+"""Адаптер «Доказательства» для модуля partners.
 
-from publishing.evidence import capture_evidence
+Снимок страницы школы может занимать до минуты (особенно если сайт медленный), поэтому он
+делается фоновой задачей — обход и ответ агенту обхода не ждут его."""
+
+from django.db import transaction
 
 
 class DjangoEvidenceStore:
     def capture(self, material_id, partner_id, url):
-        from materials.models import Material
+        from partners.interfaces.tasks import capture_school_evidence
 
-        material = Material.objects.select_related("organization").get(pk=material_id)
-        capture_evidence(material.organization, material, url, school_id=partner_id,
-                         note="размещение у школы")
+        transaction.on_commit(lambda: capture_school_evidence.delay(material_id, partner_id, url))

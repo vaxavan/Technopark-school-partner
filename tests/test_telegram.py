@@ -85,3 +85,21 @@ def test_telegram_used_when_configured(org, admin_user, submission, calls):
     assert publish_due() == 1
     pub = Publication.objects.get()
     assert pub.status == "published" and not pub.demo and pub.url.startswith("https://t.me/istok_test/")
+
+
+def test_rejected_photo_falls_back_to_text(monkeypatch, tmp_path):
+    """Telegram не принял фото (слишком большое, HEIC) — пост выходит хотя бы текстом."""
+    img = tmp_path / "big.heic"
+    img.write_bytes(b"heic")
+    log = []
+
+    def fake_post(url, data=None, files=None, timeout=None):
+        method = url.rsplit("/", 1)[-1]
+        log.append(method)
+        if method == "sendPhoto":
+            return Resp({"ok": False, "error_code": 400, "description": "Bad Request: IMAGE_PROCESS_FAILED"}, 400)
+        return Resp({"ok": True, "result": {"message_id": 3, "chat": {"username": "istok_test"}}})
+
+    monkeypatch.setattr("publishing.platforms.requests.post", fake_post)
+    r = TelegramPlatform("@istok_test", "T").publish("Текст", [str(img)])
+    assert log == ["sendPhoto", "sendMessage"] and r.url == "https://t.me/istok_test/3"

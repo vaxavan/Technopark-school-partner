@@ -35,8 +35,11 @@ class DispatchToPartners:
         for partner in self.partners.active_partners(material.organization_id):
             placement = self.placements.create_expected(material_id, partner.id)
             if placement is None:
-                report.already += 1
-                continue
+                # уже есть запись; если письмо тогда не ушло (сбой почты, не было адреса) — отправим сейчас
+                placement = self.placements.find(material_id, partner.id)
+                if placement is None or placement.dispatched_at is not None or not placement.is_open:
+                    report.already += 1
+                    continue
             if not partner.email:
                 report.without_email.append(partner.name)
                 continue
@@ -57,6 +60,7 @@ class DetectReport:
     confirmed: int = 0
     disputed: int = 0
     not_found: int = 0
+    unchecked: int = 0          # ни один источник школы не открылся — решения не принимаем
     source_errors: list = field(default_factory=list)
 
 
@@ -85,14 +89,20 @@ class DetectPlacement:
         texts = {}
         for pid, items in by_partner.items():
             partner = self.partners.get(pid)
-            found = []
+            found, reachable = [], 0
             for source in partner.ordered_sources():
                 try:
                     found.extend(self.crawler.fetch(source))
                     self.partners.mark_source(source, ok=True)
+                    reachable += 1
                 except Exception as exc:  # отказ одного источника не прерывает перебор
                     self.partners.mark_source(source, ok=False, error=str(exc))
                     report.source_errors.append((partner.name, source.url, str(exc)))
+            if partner.sources and not reachable:
+                # Сайт школы не открылся: мы не знаем, есть ли там материал. Не ставим «не найдено»
+                # и не меняем состояние — школа может подтвердить сама по ссылке из письма.
+                report.unchecked += len(items)
+                continue
             # убираем дубли по адресу
             unique = {f.url: f for f in found}
             found = list(unique.values())
@@ -118,7 +128,8 @@ class DetectPlacement:
                     report.disputed += 1
                 else:
                     placement.similarity = res.similarity if res else None
-                    started = placement.dispatched_at or placement.created_at
+                    # срок отсчитывается от отправки письма: школа, которой ничего не отправили, не «не нашлась»
+                    started = placement.dispatched_at
                     if started and now - started > self.not_found_after:
                         placement.status = PlacementStatus.NOT_FOUND
                         report.not_found += 1

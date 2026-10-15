@@ -2,13 +2,15 @@
 RSS-лента для Дзена и страница отметки размещения для школ."""
 
 import hashlib
+import uuid
 from email.utils import format_datetime
 
 from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_http_methods
 
@@ -20,12 +22,8 @@ from partners.interfaces.school_actions import report_link, unsubscribe
 from partners.models import PlacementRecord
 from publishing.models import Publication, PublicationStatus
 from submissions.models import Submission, SubmissionStatus
-from submissions.services import (
-    answer_round,
-    create_submission,
-    current_round,
-    finish_submission,
-)
+from submissions import services as clarify
+from submissions.clarify import MAX_ROUNDS
 
 from .forms import AddInfoForm, SchoolReportForm, SubmissionForm
 
@@ -33,8 +31,14 @@ RATE_LIMIT = 5          # заявок
 RATE_WINDOW = 60 * 60   # в час с одного адреса
 
 
+def client_ip(request):
+    """Адрес посетителя. X-Real-IP выставляет наш nginx (подделать его снаружи нельзя);
+    первую запись X-Forwarded-For посетитель может подставить сам, поэтому ей не верим."""
+    return (request.META.get("HTTP_X_REAL_IP") or request.META.get("REMOTE_ADDR", "")).strip()
+
+
 def _client_key(request, scope):
-    ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR", "")
+    ip = client_ip(request)
     return f"rl:{scope}:{hashlib.sha256(ip.encode()).hexdigest()[:24]}"
 
 
@@ -59,14 +63,16 @@ def landing(request):
 @require_http_methods(["GET", "POST"])
 def public_form(request, code):
     org = get_object_or_404(Organization, code=code)
-    form = SubmissionForm(request.POST or None, request.FILES or None)
+    form = SubmissionForm(request.POST or None, request.FILES or None,
+                          initial=None if request.method == "POST" else {"form_token": uuid.uuid4()})
     if request.method == "POST" and form.is_valid():
         if form.cleaned_data.get("website"):
             raise Http404  # бот заполнил скрытое поле
         if _rate_limited(request, f"form:{org.code}"):
             messages.error(request, "Слишком много заявок с вашего адреса. Попробуйте через час.")
             return render(request, "public/form.html", {"org": org, "form": form}, status=429)
-        sub = create_submission(org, form.cleaned_data, form.cleaned_data["photos"])
+        sub, _ = clarify.create_submission(org, form.cleaned_data, form.cleaned_data["photos"],
+                                           form_token=form.cleaned_data.get("form_token"))
         return redirect("public_questions", code=org.code, sid=sub.public_id)
     return render(request, "public/form.html", {"org": org, "form": form})
 
@@ -77,20 +83,36 @@ def _get_sub(code, sid):
 
 @require_http_methods(["GET", "POST"])
 def public_questions(request, code, sid):
+    """Один адрес на всё уточнение: экран ожидания, пока модель думает, затем вопросы, затем «спасибо»."""
     sub = _get_sub(code, sid)
     if request.method == "POST":
-        answer_round(sub, request.POST, skip="skip" in request.POST)
+        clarify.answer_round(sub, request.POST, skip="skip" in request.POST,
+                             round_number=request.POST.get("round"))
         return redirect("public_questions", code=code, sid=sid)
-    rnd = current_round(sub)
-    if rnd is None:
+    state = clarify.clarify_state(sub)
+    if state == clarify.DONE:
         return redirect("public_done", code=code, sid=sid)
-    return render(request, "public/questions.html", {"org": sub.organization, "sub": sub, "round": rnd,
-                                                     "max_rounds": 3})
+    ctx = {"org": sub.organization, "sub": sub, "max_rounds": MAX_ROUNDS}
+    if state == clarify.QUESTIONS:
+        return render(request, "public/questions.html", {**ctx, "round": clarify.open_round(sub)})
+    return render(request, "public/thinking.html", {**ctx, "answered": sub.rounds.exists()})
+
+
+@require_http_methods(["POST"])
+def public_think(request, code, sid):
+    """Экран ожидания вызывает этот адрес: здесь заявка уходит модели. Ответ — что показывать дальше."""
+    sub = _get_sub(code, sid)
+    state = clarify.prepare_round(sub)
+    nxt = reverse("public_done" if state == clarify.DONE else "public_questions", args=[code, sid])
+    if request.headers.get("Accept", "").startswith("application/json"):
+        return JsonResponse({"state": state, "next": nxt})
+    return redirect(nxt)
 
 
 def public_done(request, code, sid):
     sub = _get_sub(code, sid)
-    finish_submission(sub)
+    if clarify.clarify_state(sub) != clarify.DONE:
+        return redirect("public_questions", code=code, sid=sid)
     return render(request, "public/done.html", {"org": sub.organization, "sub": sub})
 
 

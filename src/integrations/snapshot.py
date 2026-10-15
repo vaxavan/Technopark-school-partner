@@ -10,6 +10,20 @@ from core.ports import Snapshot
 log = logging.getLogger(__name__)
 
 
+def _playwright_proxy():
+    """CRAWLER_PROXY в формате Playwright: логин и пароль передаются отдельно."""
+    if not settings.CRAWLER_PROXY:
+        return None
+    from urllib.parse import urlparse
+
+    u = urlparse(settings.CRAWLER_PROXY)
+    scheme = "socks5" if u.scheme.startswith("socks5") else u.scheme
+    proxy = {"server": f"{scheme}://{u.hostname}:{u.port}" if u.port else f"{scheme}://{u.hostname}"}
+    if u.username:
+        proxy.update(username=u.username, password=u.password or "")
+    return proxy
+
+
 class PlaywrightSnapshotter:
     def capture(self, url):
         try:
@@ -18,8 +32,9 @@ class PlaywrightSnapshotter:
             return HtmlOnlySnapshotter().capture(url)
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(args=["--no-sandbox"])
-                page = browser.new_page(viewport={"width": 1280, "height": 900}, locale="ru-RU")
+                browser = p.chromium.launch(args=["--no-sandbox"], proxy=_playwright_proxy())
+                page = browser.new_page(viewport={"width": 1280, "height": 900}, locale="ru-RU",
+                                        user_agent=settings.CRAWLER_USER_AGENT)
                 page.goto(url, wait_until="networkidle", timeout=45000)
                 png = page.screenshot(full_page=True)
                 html = page.content()
@@ -33,7 +48,9 @@ class PlaywrightSnapshotter:
 class HtmlOnlySnapshotter:
     def capture(self, url):
         try:
-            resp = requests.get(url, timeout=20, headers={"User-Agent": settings.CRAWLER_USER_AGENT})
+            from partners.infrastructure.crawlers import crawler_session
+
+            resp = crawler_session(retries=1).get(url, timeout=(10, 25))
             resp.raise_for_status()
             return Snapshot(png=None, html=resp.text)
         except requests.RequestException as exc:

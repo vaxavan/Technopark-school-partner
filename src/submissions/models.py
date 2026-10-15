@@ -34,6 +34,12 @@ class Submission(models.Model):
     decision_reason = models.TextField("причина решения / что запрошено", blank=True)
     completeness = models.JSONField("полнота сведений", default=dict, blank=True)
     questions_finished = models.BooleanField(default=False)
+    # Уточняющие вопросы готовит модель; пока она думает, автор видит экран ожидания.
+    # queued — нужно спросить модель, running — запрос идёт, "" — ничего не ждём.
+    clarify_state = models.CharField(max_length=10, blank=True, default="")
+    clarify_started_at = models.DateTimeField(null=True, blank=True)
+    # Одноразовый номер формы: повторная отправка той же формы не создаёт вторую заявку
+    form_token = models.UUIDField(null=True, blank=True, editable=False)
 
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -42,17 +48,22 @@ class Submission(models.Model):
         verbose_name = "заявка"
         verbose_name_plural = "заявки"
         ordering = ["-created_at"]
-        constraints = [models.UniqueConstraint(fields=["organization", "number"], name="uniq_submission_number")]
+        constraints = [models.UniqueConstraint(fields=["organization", "number"], name="uniq_submission_number"),
+                       models.UniqueConstraint(fields=["organization", "form_token"], name="uniq_submission_form_token")]
 
     def __str__(self):
         return f"№{self.number} {self.title}"
 
     def save(self, *args, **kwargs):
         if not self.number:
+            from accounts.models import Organization
+
             with transaction.atomic():
-                last = (Submission.objects.select_for_update()
-                        .filter(organization=self.organization).order_by("-number").first())
-                self.number = (last.number if last else 0) + 1
+                # блокируем строку организации: две одновременные заявки получат разные номера
+                Organization.objects.select_for_update().filter(pk=self.organization_id).first()
+                last = Submission.objects.filter(organization_id=self.organization_id).aggregate(
+                    m=models.Max("number"))["m"]
+                self.number = (last or 0) + 1
                 return super().save(*args, **kwargs)
         return super().save(*args, **kwargs)
 

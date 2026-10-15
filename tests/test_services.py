@@ -65,14 +65,14 @@ def test_clarify_schema_errors_and_timeout(submission):
 
 
 @pytest.mark.django_db
-def test_clarify_max_three_rounds(submission):
+def test_clarify_max_two_rounds(submission):
     submission.questions_finished = False
     submission.save()
     reply = '{"complete": false, "missing": ["x"], "questions": [{"id": "q1", "type": "text", "text": "Где?"}]}'
-    for i in range(3):
+    for i in range(2):
         rnd = next_round(submission, ScriptedLLM([reply]))
         assert rnd is not None and rnd.number == i + 1
-    assert next_round(submission, ScriptedLLM([reply])) is None
+    assert next_round(submission, ScriptedLLM([reply])) is None   # третьего раунда нет
     submission.refresh_from_db()
     assert submission.questions_finished
 

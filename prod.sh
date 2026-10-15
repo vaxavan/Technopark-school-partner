@@ -8,7 +8,10 @@
 #   ./prod.sh restore backups/db-2026-10-14.sql.gz — восстановить базу из копии
 set -e
 cd "$(dirname "$0")"
-DC="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+# Какие файлы compose использовать, задаёт COMPOSE_FILE в .env:
+#   без домена (по IP и порту)  — ничего не указывать (только docker-compose.yml);
+#   с доменом и HTTPS           — COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+DC="docker compose -p technopark"
 
 case "$1" in
   up)      $DC up -d --build && $DC ps ;;

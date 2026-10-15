@@ -8,7 +8,7 @@
   <table>
     <tr><th>Сервис</th><th>Режим</th><th>Что делать</th></tr>
     <tr><td>Языковая модель</td><td>{% if modes.llm == 'demo' %}<span class="badge b-warn">демо</span>{% else %}<span class="badge b-ok">YandexGPT</span>{% endif %}</td><td><small>{% if modes.llm == 'settings' %}Ключ из настроек ниже{% elif modes.llm == 'env' %}Ключ из .env на сервере{% else %}Укажите ключ и ID каталога ниже{% endif %}</small></td></tr>
-    <tr><td>Почта</td><td>{% if modes.mail == 'smtp' %}<span class="badge b-ok">SMTP</span>{% else %}<span class="badge b-warn">демо</span>{% endif %}</td><td><small>{% if modes.mail == 'smtp' %}Письма уходят по-настоящему{% else %}Письма сохраняются файлами в media/outbox. Подключение — docs/ТОКЕНЫ.md, раздел «Почта»{% endif %}</small></td></tr>
+    <tr><td>Почта</td><td>{% if modes.mail == 'smtp' %}<span class="badge b-ok">SMTP</span>{% else %}<span class="badge b-warn">демо</span>{% endif %}</td><td><small>{% if modes.mail == 'smtp' %}Письма уходят по-настоящему{% else %}Письма сохраняются файлами в папке outbox на сервере. Подключение — docs/ТОКЕНЫ.md, раздел «Почта»{% endif %}</small></td></tr>
     <tr><td>ВКонтакте</td><td>{% if modes.vk == 'live' %}<span class="badge b-ok">подключено</span>{% else %}<span class="badge b-warn">демо</span>{% endif %}</td><td><small>Ниже или в .env: VK_GROUP_ID, VK_ACCESS_TOKEN</small></td></tr>
     <tr><td>Telegram</td><td>{% if modes.telegram == 'live' %}<span class="badge b-ok">подключено</span>{% else %}<span class="badge b-warn">демо</span>{% endif %}</td><td><small>Ниже или в .env: TELEGRAM_CHAT_ID, TELEGRAM_BOT_TOKEN</small></td></tr>
     <tr><td>Max</td><td>{% if modes.max == 'live' %}<span class="badge b-ok">подключено</span>{% else %}<span class="badge b-warn">демо</span>{% endif %}</td><td><small>Ниже или в .env: MAX_CHAT_ID, MAX_BOT_TOKEN</small></td></tr>
@@ -50,6 +50,29 @@
     </form>
   </div>
 {% endfor %}
+</div>
+
+<div class="card" id="agent">
+  <h2>Проверка сайтов школ с другого компьютера</h2>
+  <p class="muted">Если сайты школ не открываются с сервера (например, пускают только российские домашние или офисные
+    адреса), их может проверять <b>агент обхода</b> — небольшая программа на компьютере, с которого сайты открываются.
+    Агент сам скачивает страницы школ и присылает найденное, а сверку и отчёт делает система.
+    Пока агент отчитывается, сервер сайты школ сам не обходит. Инструкция — docs/АГЕНТ_ОБХОДА.md.</p>
+  {% if agent_token %}
+    <p class="msg success">Ключ агента (показывается один раз): <code>{{ agent_token }}</code></p>
+    <p class="help">Команда для запуска на компьютере с агентом:</p>
+    <p><code>python scripts/crawl_agent.py --server {{ site_url }} --token {{ agent_token }}</code></p>
+  {% endif %}
+  {% if agent %}
+    <p>Агент: {% if agent.is_active %}<span class="badge b-ok">работает</span>{% elif agent.last_seen_at %}<span class="badge b-warn">давно не отчитывался</span>{% else %}<span class="badge">ещё не подключался</span>{% endif %}
+      {% if agent.last_seen_at %}<small class="muted">последний раз {{ agent.last_seen_at|date:"d.m.Y H:i" }}{% if agent.last_summary %} — {{ agent.last_summary }}{% endif %}</small>{% endif %}</p>
+  {% else %}
+    <p><span class="badge">не подключён</span> <small class="muted">сайты школ проверяет сервер</small></p>
+  {% endif %}
+  <form method="post" style="display:flex; gap:8px; flex-wrap:wrap">{% csrf_token %}<input type="hidden" name="form" value="agent">
+    <button class="btn ghost" name="action" value="issue">{% if agent %}Выдать новый ключ{% else %}Создать ключ агента{% endif %}</button>
+    {% if agent %}<button class="btn danger" name="action" value="revoke">Отключить агента</button>{% endif %}
+  </form>
 </div>
 
 <div class="card">

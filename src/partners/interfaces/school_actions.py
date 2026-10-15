@@ -6,7 +6,7 @@ from core.events import record
 from partners import container
 from partners.domain.entities import PlacementStatus
 from partners.domain.matching import TextMatcher
-from partners.infrastructure.crawlers import HttpClient, SourceUnavailable, extract_article
+from partners.infrastructure.crawlers import HttpClient, SourceUnavailable, extract_article, is_public_url
 from partners.infrastructure.repositories import DjangoMaterialReader
 
 
@@ -15,10 +15,12 @@ def report_link(placement, url):
     иначе запись уходит администратору на решение."""
     if placement.status == PlacementStatus.CONFIRMED.value:
         return placement
-    try:
-        title, text = extract_article(HttpClient(pause=0).get(url))
-    except SourceUnavailable:
-        title, text = "", ""
+    title, text = "", ""
+    if is_public_url(url):          # внутренние адреса сервера не открываем
+        try:
+            title, text = extract_article(HttpClient(pause=0).get(url))
+        except SourceUnavailable:
+            pass
     original = DjangoMaterialReader().get(placement.material_id).text
     res = TextMatcher().compare(original, text) if text else None
     placement.found_url, placement.found_title = url, title[:500]

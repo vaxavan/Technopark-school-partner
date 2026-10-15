@@ -1,6 +1,7 @@
 """Сценарии работы с заявкой и материалом. Все переходы — через конечный автомат domain.py."""
 
 import logging
+from datetime import timedelta
 
 from django.db import transaction
 from django.utils import timezone
@@ -85,25 +86,66 @@ def author_added(submission: Submission, extra_text, files=()):
 
 # ---------- Подготовка текстов ----------
 
-def run_generation(material: Material, llm=None):
-    """Готовит варианты для всех площадок. При отказе модели материал всё равно уходит на
-    утверждение — с черновиками из текста заявки, которые администратор правит вручную."""
+GENERATION_BUDGET = 240   # секунд на все площадки; дальше — черновики для ручной правки
+PREPARING_STUCK_AFTER = timedelta(minutes=10)
+
+
+def _manual_draft(material, channel, reason):
+    add_version(material, channel, f"{material.title}\n\n{material.submission.text}", VariantSource.MANUAL,
+                checks=[reason], attempts=0)
+
+
+def run_generation(material: Material, llm=None, only=None):
+    """Готовит варианты для площадок (всех или только перечисленных в only). При отказе модели
+    материал всё равно уходит на утверждение — с черновиками из текста заявки для ручной правки."""
+    import time
+
     org = material.organization
     source = material.submission.full_text_for_model()
-    errors = []
-    for channel in material.channels:
+    errors, started = [], time.monotonic()
+    for channel in [c for c in material.channels if not only or c in only]:
+        if time.monotonic() - started > GENERATION_BUDGET:
+            errors.append("модель отвечала слишком долго")
+            _manual_draft(material, channel, "Модель не успела — подготовьте текст вручную или нажмите "
+                                             "«Подготовить заново»")
+            continue
         try:
             text, issues, attempts = generate_for_channel(org, channel, source, style_examples(org, channel), llm)
             add_version(material, channel, text, VariantSource.MODEL, checks=issues, attempts=attempts)
         except LLMError as exc:
             errors.append(str(exc))
-            add_version(material, channel, f"{material.title}\n\n{material.submission.text}", VariantSource.MANUAL,
-                        checks=["Языковая модель недоступна — подготовьте текст вручную"], attempts=0)
+            _manual_draft(material, channel, "Языковая модель недоступна — подготовьте текст вручную")
+    _texts_ready(material, errors)
+
+
+def _texts_ready(material, errors):
     material.generation_error = "; ".join(dict.fromkeys(errors))[:2000]
     material.status = domain.next_state(domain.MATERIAL_TRANSITIONS, "texts_ready", material.status, system=True)
     material.save(update_fields=["status", "generation_error", "updated_at"])
-    record(org, "material.texts_ready", obj=material,
+    record(material.organization, "material.texts_ready", obj=material,
            message=f"Тексты готовы: {material.title}" + (" (модель недоступна)" if errors else ""))
+
+
+def finish_generation_with_drafts(material: Material, reason):
+    """Подготовка прервалась (сбой, перезапуск, превышено время): материал не должен застрять
+    в «Подготовке» — недостающие тексты становятся черновиками для ручной правки."""
+    material.refresh_from_db()
+    if material.status != MaterialStatus.PREPARING:
+        return
+    for channel in material.channels:
+        if material.current_variant(channel) is None:
+            _manual_draft(material, channel, reason)
+    _texts_ready(material, [reason])
+
+
+def stop_generation(material: Material, user):
+    """Кнопка «Править вручную» для материала, который слишком долго в подготовке."""
+    _role(user, material.organization)
+    if material.status != MaterialStatus.PREPARING:
+        raise domain.TransitionError("Тексты уже готовы")
+    if timezone.now() - material.updated_at < PREPARING_STUCK_AFTER:
+        raise domain.TransitionError("Подготовка идёт меньше 10 минут — подождите ещё немного")
+    finish_generation_with_drafts(material, "Подготовка прервана — тексты нужно подготовить вручную")
 
 
 def regenerate(material: Material, user):
@@ -163,8 +205,10 @@ def approve(material: Material, user, basis, comment="", scheduled_at=None):
     org = material.organization
     role = _role(user, org)
     domain.check_approval_basis(role, basis)
-    if not material.current_variants().exists():
-        raise domain.TransitionError("Нет текстов для публикации")
+    missing = [Channel(c).label for c in material.channels if material.current_variant(c) is None]
+    if not material.channels or missing:
+        raise domain.TransitionError("Нет текста для площадок: " + ", ".join(missing) if missing
+                                     else "Выберите площадки")
     with transaction.atomic():
         material = Material.objects.select_for_update().get(pk=material.pk)
         material.status = domain.next_state(domain.MATERIAL_TRANSITIONS, "approve", material.status, role)
@@ -176,14 +220,11 @@ def approve(material: Material, user, basis, comment="", scheduled_at=None):
         record(org, kind, actor=user, obj=material,
                message=f"Материал утверждён: {approval.get_basis_display()}. Выход {timezone.localtime(material.scheduled_at):%d.%m.%Y %H:%M}",
                basis=basis, material_id=material.pk, comment=comment)
-        if not material.publications.exists():
-            # только рассылка школам — публиковать на площадках нечего
-            material.status = MaterialStatus.PUBLISHED
-            material.save(update_fields=["status", "updated_at"])
-            if Channel.PARTNERS in material.channels:
-                from partners.tasks import dispatch_material
+    if not material.publications.exists():
+        # только рассылка школам: уйдёт в назначенное время (сразу, если время уже наступило)
+        from publishing.services import release_partner_only_due
 
-                transaction.on_commit(lambda: dispatch_material.delay(material.pk))
+        release_partner_only_due()
     return approval
 
 
@@ -214,6 +255,19 @@ def unschedule(material: Material, user):
            message="Материал снят с публикации и возвращён на утверждение")
 
 
+def drop_channel(material: Material, publication_id, user):
+    from publishing.models import PublicationStatus
+    from publishing.services import drop_publication
+
+    _role(user, material.organization)
+    pub = material.publications.filter(pk=publication_id).first()
+    if pub is None or pub.status not in (PublicationStatus.FAILED, PublicationStatus.NEEDS_CHECK):
+        raise domain.TransitionError("Убрать можно только площадку с ошибкой")
+    drop_publication(pub)
+    record(material.organization, "publication.dropped", actor=user, obj=material,
+           message=f"{pub.get_channel_display()}: площадка убрана из материала")
+
+
 def retry_publication(material: Material, user):
     from publishing.services import retry
 
@@ -225,24 +279,21 @@ def retry_publication(material: Material, user):
 
 
 def set_channels(material: Material, channels, user):
+    """Меняет набор площадок. Тексты для новых площадок готовит фоновая задача — страница не ждёт модель."""
     _ensure_editable(material)
     channels = [c for c in channels if c in Channel.values]
     if not channels:
         raise domain.TransitionError("Выберите хотя бы одну площадку")
     material.channels = channels
     material.save(update_fields=["channels", "updated_at"])
-    # для новых площадок готовим текст
     missing = [c for c in channels if not material.current_variant(c)]
     if missing:
-        org = material.organization
-        source = material.submission.full_text_for_model()
-        for c in missing:
-            try:
-                text, issues, attempts = generate_for_channel(org, c, source)
-                add_version(material, c, text, VariantSource.MODEL, checks=issues, attempts=attempts)
-            except LLMError:
-                add_version(material, c, f"{material.title}\n\n{material.submission.text}", VariantSource.MANUAL,
-                            checks=["Языковая модель недоступна — подготовьте текст вручную"], attempts=0)
+        material.status = domain.next_state(domain.MATERIAL_TRANSITIONS, "regenerate", material.status,
+                                            _role(user, material.organization))
+        material.save(update_fields=["status", "updated_at"])
+        from .tasks import generate_texts
+
+        transaction.on_commit(lambda: generate_texts.delay(material.pk, missing))
 
 
 def restore_version(material: Material, variant_id, user):

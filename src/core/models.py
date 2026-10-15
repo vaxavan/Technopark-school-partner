@@ -33,6 +33,7 @@ class Event(models.Model):
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     processed_at = models.DateTimeField(null=True, blank=True)
     attempts = models.PositiveSmallIntegerField(default=0)
+    retry_at = models.DateTimeField(null=True, blank=True)   # следующая попытка после сбоя (с нарастающей паузой)
     last_error = models.TextField(blank=True)
 
     class Meta:

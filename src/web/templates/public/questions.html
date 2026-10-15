@@ -4,9 +4,9 @@
 <div class="card">
   <h1>Пара уточнений</h1>
   <p class="muted">Заявка №{{ sub.number }} сохранена. Ответьте, пожалуйста, — так новость получится точнее.
-    Можно пропустить. Раунд {{ round.number }} из {{ max_rounds }}.</p>
-  <form method="post">
-    {% csrf_token %}
+    Можно пропустить.{% if max_rounds > 1 %} Вопросы {{ round.number }} из {{ max_rounds }}.{% endif %}</p>
+  <form method="post" data-once>
+    {% csrf_token %}<input type="hidden" name="round" value="{{ round.number }}">
     {% for q in round.questions %}
       <div class="q">
         <label for="{{ q.id }}">{{ q.text }}</label>
@@ -25,7 +25,7 @@
       </div>
     {% endfor %}
     <div class="actions" style="margin-top:16px">
-      <button class="btn" name="answer">Ответить</button>
+      <button class="btn" name="answer" value="1" data-sending="Отправляем…">Ответить</button>
       <button class="btn ghost" name="skip" value="1">Пропустить</button>
     </div>
   </form>

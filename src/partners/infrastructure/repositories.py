@@ -62,6 +62,10 @@ class DjangoPlacementRepository:
             return None  # уже разослано этой школе
         return placement_to_entity(r)
 
+    def find(self, material_id, partner_id):
+        r = PlacementRecord.objects.filter(material_id=material_id, school_id=partner_id).first()
+        return placement_to_entity(r) if r else None
+
     def save(self, placement: Placement, **extra):
         r = PlacementRecord.objects.get(pk=placement.id)
         apply_placement(r, placement)

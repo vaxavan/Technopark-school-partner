@@ -9,6 +9,7 @@ urlpatterns = [
     path("", pub.landing, name="landing"),
     path("f/<slug:code>/", pub.public_form, name="public_form"),
     path("f/<slug:code>/s/<uuid:sid>/questions/", pub.public_questions, name="public_questions"),
+    path("f/<slug:code>/s/<uuid:sid>/think/", pub.public_think, name="public_think"),
     path("f/<slug:code>/s/<uuid:sid>/done/", pub.public_done, name="public_done"),
     path("f/<slug:code>/s/<uuid:sid>/add/", pub.public_add, name="public_add"),
     path("n/<slug:code>/<uuid:mid>/", pub.news_page, name="news_page"),

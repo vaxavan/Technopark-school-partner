@@ -18,14 +18,15 @@ FIELD_ENCRYPTION_KEY=...
 # + пароли и ключи Yandex, как в шаге 5
 ```
 
-`DOMAIN` оставьте пустым. Запуск — **без** `docker-compose.prod.yml`:
+`DOMAIN` оставьте пустым, `COMPOSE_FILE` не указывайте — запуск **без** `docker-compose.prod.yml`
+(Caddy не запускается и порты 80/443 не занимает, поэтому соседние проекты на сервере не мешают):
 
 ```bash
-docker compose up -d --build
-docker compose exec web python manage.py check_integrations
+./prod.sh up
+./prod.sh check
 ```
 
-Обновление: `git pull && docker compose up -d --build`. Копия базы:
+Обновление: `./prod.sh update`. Копия базы:
 `docker compose exec -T db pg_dump -U technopark technopark | gzip > backup-$(date +%F).sql.gz`.
 
 Ограничения без домена:
@@ -143,6 +144,12 @@ docker run --rm python:3.12-slim sh -c "pip -q install cryptography && python -c
 Почту, ВКонтакте и Max можно добавить позже (см. [ТОКЕНЫ.md](ТОКЕНЫ.md)). Сохранить в nano: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
 ## 6. Запустить
+
+Добавьте в `.env` строку — по ней `./prod.sh` и автоматическая выкладка подключают Caddy и копии базы:
+
+```
+COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+```
 
 ```bash
 ./prod.sh up

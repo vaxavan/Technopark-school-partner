@@ -74,10 +74,14 @@ def publish_one(publication_id):
             result = platform.publish(text, images)
             demo = platform.demo
             result_id = result.external_id
-            url = result.url or f"{settings.SITE_URL}/demo/{pub.channel}/{material.public_id}/"
-    except PlatformError as exc:
+            # у демо-площадки адрес — наша страница; у настоящей площадки без ссылки (закрытый канал)
+            # адрес оставляем пустым, чтобы «доказательством» не стала демо-страница
+            url = result.url or (f"{settings.SITE_URL}/demo/{pub.channel}/{material.public_id}/" if demo else "")
+    except Exception as exc:  # любая ошибка — «ошибка публикации», которую можно повторить, а не зависание
+        if not isinstance(exc, PlatformError):
+            log.exception("Сбой публикации %s", pub.pk)
         pub.status = PublicationStatus.FAILED
-        pub.error = str(exc)[:2000]
+        pub.error = str(exc)[:2000] or exc.__class__.__name__
         pub.save(update_fields=["status", "error"])
         record(org, "publication.failed", obj=material, message=f"{pub.get_channel_display()}: {exc}",
                channel=pub.channel)
@@ -90,9 +94,10 @@ def publish_one(publication_id):
     pub.save(update_fields=["status", "published_at", "external_id", "url", "demo", "error"])
     record(org, "publication.published", obj=material,
            message=f"{pub.get_channel_display()}{' (демо)' if demo else ''}: {url}", channel=pub.channel, url=url)
-    from .tasks import capture_publication_evidence
+    if url:
+        from .tasks import capture_publication_evidence
 
-    transaction.on_commit(lambda: capture_publication_evidence.delay(pub.id))
+        transaction.on_commit(lambda: capture_publication_evidence.delay(pub.id))
     _sync_material_status(material)
     return pub
 
@@ -101,7 +106,9 @@ def _sync_material_status(material: Material):
     """Материал «опубликован», когда опубликованы все площадки; «ошибка», если есть сбой."""
     statuses = set(material.publications.values_list("status", flat=True))
     material.refresh_from_db(fields=["status"])
-    if statuses and statuses <= {PublicationStatus.PUBLISHED}:
+    if not statuses and material.status == MaterialStatus.PUBLISH_ERROR:
+        new = MaterialStatus.PUBLISHED   # все проблемные площадки убраны — публиковать больше нечего
+    elif statuses and statuses <= {PublicationStatus.PUBLISHED}:
         new = MaterialStatus.PUBLISHED
     elif PublicationStatus.FAILED in statuses or PublicationStatus.NEEDS_CHECK in statuses:
         new = MaterialStatus.PUBLISH_ERROR
@@ -136,9 +143,45 @@ def release_stuck(now=None):
 
 
 def retry(material: Material):
-    """Повтор после ошибки: только для площадок с ошибкой, опубликованные не трогаем."""
-    material.publications.filter(status__in=[PublicationStatus.FAILED]).update(
+    """Повтор после ошибки: только для площадок с ошибкой или «проверить вручную»; опубликованные
+    не трогаем. Для «проверить вручную» администратор сначала смотрит площадку: если пост вышел,
+    он нажимает «Вышло», иначе — «Повторить»."""
+    material.publications.filter(status__in=[PublicationStatus.FAILED, PublicationStatus.NEEDS_CHECK]).update(
         status=PublicationStatus.SCHEDULED, scheduled_at=timezone.now(), error="")
+
+
+def drop_publication(publication: Publication):
+    """Площадку решили не использовать (например, Telegram не принимает фото): убираем её,
+    чтобы материал не висел в ошибке и рассылка школам не ждала."""
+    material = publication.material
+    material.channels = [c for c in material.channels if c != publication.channel]
+    material.save(update_fields=["channels", "updated_at"])
+    publication.delete()
+    _sync_material_status(material)
+
+
+def release_partner_only_due(now=None):
+    """Материалы только для рассылки школам: публикаций нет, поэтому в назначенное время
+    материал считается вышедшим и уходит школам."""
+    now = now or timezone.now()
+    due = Material.objects.filter(status=MaterialStatus.SCHEDULED, scheduled_at__lte=now,
+                                  publications__isnull=True)
+    count = 0
+    for material in due:
+        with transaction.atomic():
+            m = Material.objects.select_for_update(skip_locked=True).filter(
+                pk=material.pk, status=MaterialStatus.SCHEDULED).first()
+            if m is None or m.publications.exists():
+                continue
+            m.status = MaterialStatus.PUBLISHED
+            m.save(update_fields=["status", "updated_at"])
+            record(m.organization, "material.published", obj=m, message=f"Вышло (рассылка школам): {m.title}")
+            if Channel.PARTNERS in m.channels:
+                from partners.tasks import dispatch_material
+
+                transaction.on_commit(lambda mid=m.pk: dispatch_material.delay(mid))
+            count += 1
+    return count
 
 
 def mark_published_manually(publication: Publication, url):
@@ -152,7 +195,7 @@ def mark_published_manually(publication: Publication, url):
 
 def capture_for_publication(publication_id):
     pub = Publication.objects.select_related("material__organization").get(pk=publication_id)
-    if pub.evidence.exists():
+    if pub.evidence.exists() or not pub.url:
         return
     capture_evidence(pub.material.organization, pub.material, pub.url, publication=pub,
                      note="демо-публикация" if pub.demo else "")

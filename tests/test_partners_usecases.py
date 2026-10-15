@@ -51,6 +51,9 @@ class Placements:
         self.next_id += 1
         return p
 
+    def find(self, m, pid):
+        return next((p for p in self.items.values() if p.material_id == m and p.partner_id == pid), None)
+
     def save(self, p, **extra):
         self.items[p.id] = p
 
@@ -112,7 +115,8 @@ def test_dispatch_creates_placements_and_isolates_failures():
     assert report.failed[0][0] == "Сломанная почта"
     assert len(placements.items) == 4                      # неактивной школе не рассылаем
     again = DispatchToPartners(partners, placements, Materials(), mailer, clock=lambda: NOW)(10)
-    assert again.already == 4 and again.sent == 0          # повторная рассылка не дублирует
+    assert again.already == 2 and again.sent == 0          # кому отправлено — не дублируем
+    assert again.without_email == ["Без почты"] and again.failed[0][0] == "Сломанная почта"  # неотправленным — снова
 
 
 def test_detect_three_outcomes_and_source_failure_tolerated():
@@ -165,3 +169,24 @@ def test_resolve_disputed_reject_then_ignored_next_time():
     assert p.status == PlacementStatus.EXPECTED and "http://l14/n" in p.rejected_urls
     ResolveDisputedPlacement(placements, ev)(p.id, accept=True, url="http://l14/real")
     assert p.status == PlacementStatus.CONFIRMED and ev.captured[-1][2] == "http://l14/real"
+
+
+def test_unreachable_site_is_not_marked_not_found():
+    """Сайт школы не открылся — мы не знаем, есть ли там материал: «не найдено» не ставим."""
+    partners = Partners([Partner(1, "Школа", "s@x", True, [Source(1, SourceKind.HTML, "bad")])])
+    placements = Placements()
+    DispatchToPartners(partners, placements, Materials(), Mailer(), clock=lambda: NOW)(10)
+    later = NOW + timedelta(days=30)
+    report = DetectPlacement(partners, placements, Materials(), Crawler({}), Evidence(), clock=lambda: later)(1)
+    assert report.unchecked == 1 and report.not_found == 0
+    assert list(placements.items.values())[0].status == PlacementStatus.EXPECTED
+
+
+def test_failed_mail_is_resent_on_next_dispatch():
+    """Почта упала у одной школы — повторная рассылка отправит ей, а остальным не продублирует."""
+    partners, placements, mailer = make_partners(), Placements(), Mailer()
+    DispatchToPartners(partners, placements, Materials(), mailer, clock=lambda: NOW)(10)
+    partners.p[4].email = "fixed@x"                               # адрес исправили
+    again = DispatchToPartners(partners, placements, Materials(), mailer, clock=lambda: NOW)(10)
+    assert again.sent == 1 and mailer.sent.count("Сломанная почта") == 1
+    assert mailer.sent.count("Школа 16") == 1

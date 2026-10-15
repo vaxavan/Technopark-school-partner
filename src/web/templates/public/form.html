@@ -4,8 +4,8 @@
 <div class="card">
   <h1>Расскажите о событии</h1>
   <p class="muted">Мы подготовим новость для соцсетей технопарка и сайтов школ-партнёров. Регистрация не нужна.
-    Если каких-то сведений не хватит, после отправки появятся 1–3 коротких вопроса.</p>
-  <form method="post" enctype="multipart/form-data" novalidate>
+    Если каких-то сведений не хватит, после отправки появится пара коротких вопросов.</p>
+  <form method="post" enctype="multipart/form-data" novalidate data-once>
     {% csrf_token %}
     {{ form.non_field_errors }}
     {% for f in form %}
@@ -16,7 +16,7 @@
         {{ f }}{% if f.help_text %}<div class="help">{{ f.help_text }}</div>{% endif %}{{ f.errors }}
       {% endif %}
     {% endfor %}
-    <p style="margin-top:18px"><button class="btn">Отправить заявку</button></p>
+    <p style="margin-top:18px"><button class="btn" data-sending="Отправляем…">Отправить заявку</button></p>
   </form>
 </div>
 {% endblock %}

@@ -32,14 +32,21 @@ def test_full_flow(client, org, admin_user, director, monkeypatch):
         "place": "Фрязино", "author_name": "Анна", "author_email": "anna@example.com", "consent": "on"})
     assert resp.status_code == 302
     sub = Submission.objects.get()
-    resp = client.get(resp["Location"])
+    questions_url = resp["Location"]
+    # сначала экран ожидания: модель проверяет заявку, страница сама спрашивает «что дальше»
+    page = client.get(questions_url).content.decode()
+    assert "think-art" in page and sub.rounds.count() == 0
+    think_url = reverse("public_think", args=[org.code, sub.public_id])
+    r = client.post(think_url, HTTP_ACCEPT="application/json")
+    assert r.json() == {"state": "questions", "next": questions_url}
+    resp = client.get(questions_url)
     assert "Когда проходило мероприятие?" in resp.content.decode()
     assert sub.rounds.count() == 1
 
     # 2. автор отвечает; при следующем раунде сведений достаточно
-    resp = client.post(reverse("public_questions", args=[org.code, sub.public_id]),
-                       {"q1": "12 октября", "q2": "да", "answer": "1"})
-    resp = client.get(resp["Location"], follow=True)
+    resp = client.post(questions_url, {"q1": "12 октября", "q2": "да", "answer": "1"})
+    assert "think-art" in client.get(resp["Location"]).content.decode()
+    resp = client.post(think_url, follow=True)          # без JavaScript — обычная кнопка «Продолжить»
     assert "принята" in resp.content.decode()
     sub.refresh_from_db()
     assert sub.questions_finished and "12 октября" in sub.full_text_for_model()
@@ -225,3 +232,90 @@ def test_init_system_creates_users_and_schools(monkeypatch, django_user_model):
     assert Membership.objects.get(user=boss).role == "director"
     assert django_user_model.objects.filter(email="admin@istok.local").exists()
     assert boss.memberships.get().organization.schools.count() == 18
+
+
+@pytest.mark.django_db
+def test_double_submit_and_back_button_make_one_submission(client, org):
+    """Двойное нажатие, «назад» и повторная отправка — одна заявка, а не несколько."""
+    page = client.get(reverse("public_form", args=[org.code])).content.decode()
+    token = page.split('name="form_token" value="')[1].split('"')[0]
+    data = {"title": "Вторая новость", "text": "Прошёл турнир.", "author_name": "Иван",
+            "author_email": "ivan@example.com", "consent": "on", "form_token": token}
+    first = client.post(reverse("public_form", args=[org.code]), data)
+    second = client.post(reverse("public_form", args=[org.code]), data)
+    assert first["Location"] == second["Location"]
+    # та же новость из новой вкладки (другой номер формы) в течение получаса — тоже не дубль
+    third = client.post(reverse("public_form", args=[org.code]), {**data, "form_token": ""})
+    assert third["Location"] == first["Location"]
+    assert Submission.objects.count() == 1
+    # а другая новость того же автора — новая заявка
+    client.post(reverse("public_form", args=[org.code]), {**data, "form_token": "", "title": "Третья новость"})
+    assert Submission.objects.count() == 2
+
+
+@pytest.mark.django_db
+def test_two_rounds_max_and_staff_notified_once(client, org, admin_user, monkeypatch):
+    from submissions import services as sub_services
+
+    class AlwaysAsks:
+        def complete(self, system, user, **kw):
+            return '{"complete": false, "missing": ["итог"], "questions": [{"id": "q1", "type": "text", "text": "Кто победил?"}]}'
+
+    monkeypatch.setattr("submissions.clarify.get_llm", lambda org=None: AlwaysAsks())
+    sub, _ = sub_services.create_submission(org, {"title": "Турнир", "text": "Прошёл турнир.", "author_name": "Иван",
+                                                  "author_email": "i@example.com"})
+    assert sub_services.prepare_round(sub) == sub_services.QUESTIONS
+    assert sub_services.answer_round(sub, {"q1": "Школа №1"}) == sub_services.THINKING
+    assert sub_services.prepare_round(sub) == sub_services.QUESTIONS     # второй раунд
+    assert sub_services.answer_round(sub, {"q1": "Команда 5Б"}) == sub_services.DONE   # третьего нет
+    assert sub.rounds.count() == 2
+    sub_services.finish_submission(sub)
+    from core.models import Event
+    assert Event.objects.filter(kind="submission.received").count() == 1
+
+
+@pytest.mark.django_db
+def test_parallel_think_requests_ask_model_once(org, monkeypatch):
+    """Вторая вкладка или повторный запрос, пока модель думает, не создают второй раунд."""
+    from submissions import services as sub_services
+    from submissions.models import Submission as S
+
+    calls = []
+
+    class Slow:
+        def complete(self, system, user, **kw):
+            calls.append(1)
+            # пока «думаем», приходит второй запрос — он должен просто подождать
+            assert sub_services.prepare_round(S.objects.get(pk=sub.pk)) == sub_services.THINKING
+            return '{"complete": false, "missing": [], "questions": [{"id": "q1", "type": "text", "text": "Где?"}]}'
+
+    monkeypatch.setattr("submissions.clarify.get_llm", lambda org=None: Slow())
+    sub, _ = sub_services.create_submission(org, {"title": "Т", "text": "Т", "author_name": "И",
+                                                  "author_email": "i@example.com"})
+    assert sub_services.prepare_round(sub) == sub_services.QUESTIONS
+    assert len(calls) == 1 and sub.rounds.count() == 1
+
+
+@pytest.mark.django_db
+def test_stuck_model_and_abandoned_author_do_not_lose_submission(org):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from core.models import Event
+    from submissions import services as sub_services
+    from submissions.models import Submission as S
+
+    stuck, _ = sub_services.create_submission(org, {"title": "А", "text": "А", "author_name": "И",
+                                                    "author_email": "a@example.com"})
+    S.objects.filter(pk=stuck.pk).update(clarify_state="running",
+                                         clarify_started_at=timezone.now() - timedelta(minutes=5))
+    assert sub_services.clarify_state(stuck) == sub_services.DONE          # модель зависла — идём дальше
+
+    gone, _ = sub_services.create_submission(org, {"title": "Б", "text": "Б", "author_name": "И",
+                                                   "author_email": "b@example.com"})
+    S.objects.filter(pk=gone.pk).update(updated_at=timezone.now() - timedelta(hours=1))
+    assert sub_services.finish_abandoned() == 1
+    gone.refresh_from_db()
+    assert gone.questions_finished
+    assert Event.objects.filter(kind="submission.received").count() == 2

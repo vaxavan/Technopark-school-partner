@@ -69,7 +69,7 @@ class Command(BaseCommand):
 
     def check_mail(self, to):
         if not settings.EMAIL_HOST:
-            return self.skip("Почта", "SMTP не задан — письма складываются в media/outbox")
+            return self.skip("Почта", "SMTP не задан — письма складываются файлами в папку outbox")
         try:
             conn = get_connection()
             conn.open()
@@ -132,14 +132,61 @@ class Command(BaseCommand):
             self.bad("Max", f"{exc}. Если ошибка сертификата — см. MAX_CA_BUNDLE в docs/ТОКЕНЫ.md")
 
     def check_schools(self, org, limit):
-        from partners.infrastructure.crawlers import CompositeCrawler
-        from partners.infrastructure.mappers import source_to_entity
-        from partners.models import Source
+        """Для каждого источника: DNS, TCP-подключение, загрузка страницы и разбор. По итогам — подсказка."""
+        import socket
+        import time
+        from urllib.parse import urlparse
 
-        crawler = CompositeCrawler()
-        for src in Source.objects.filter(school__organization=org, school__active=True)[:limit]:
+        from partners.infrastructure.crawlers import CompositeCrawler, crawler_session, describe_error
+        from partners.infrastructure.mappers import source_to_entity
+        from partners.models import CrawlAgent, Source
+
+        if settings.CRAWLER_PROXY:
+            self.skip("Сайты школ", "запросы идут через прокси CRAWLER_PROXY (DNS и TCP ниже — без прокси)")
+        agent = CrawlAgent.objects.filter(organization=org).first()
+        if agent and agent.is_active:
+            self.ok("Агент обхода", f"работает, последний отчёт {agent.last_seen_at:%d.%m %H:%M}: {agent.last_summary}")
+        crawler, session = CompositeCrawler(), crawler_session(retries=0)
+        blocked = ok_count = 0
+        sources = Source.objects.filter(school__organization=org, school__active=True).exclude(kind="vk")
+        for src in sources.select_related("school")[:limit]:
+            name, u = src.school.name[:45], urlparse(src.url)
+            port = u.port or (443 if u.scheme == "https" else 80)
+            try:
+                ips = sorted({i[4][0] for i in socket.getaddrinfo(u.hostname, port, proto=socket.IPPROTO_TCP)})
+            except socket.gaierror as exc:
+                self.bad("Сайт школы", f"{name}: адрес {u.hostname} не найден в DNS ({exc})")
+                continue
+            if not settings.CRAWLER_PROXY:
+                started = time.monotonic()
+                try:
+                    socket.create_connection((u.hostname, port), timeout=10).close()
+                except OSError as exc:
+                    blocked += 1
+                    self.bad("Сайт школы", f"{name}: {u.hostname} ({', '.join(ips[:2])}) не принимает подключение "
+                                           f"с этого сервера за 10 с ({exc.__class__.__name__})")
+                    continue
+                tcp = time.monotonic() - started
+            else:
+                tcp = 0
+            try:
+                resp = session.get(src.url, timeout=(10, 25))
+                resp.raise_for_status()
+            except Exception as exc:
+                self.bad("Сайт школы", f"{name}: {describe_error(exc)}")
+                continue
             try:
                 found = crawler.fetch(source_to_entity(src))
-                self.ok("Сайт школы", f"{src.school.name[:50]}: найдено публикаций {len(found)}")
             except Exception as exc:
-                self.bad("Сайт школы", f"{src.school.name[:50]}: {exc}")
+                self.bad("Сайт школы", f"{name}: страница открылась, но разобрать не удалось: {exc}")
+                continue
+            ok_count += 1
+            self.ok("Сайт школы", f"{name}: подключение {tcp:.1f} с, найдено публикаций {len(found)}")
+        if blocked and not ok_count:
+            self.stdout.write(self.style.WARNING(
+                "\nСайты школ не принимают подключения с этого сервера, хотя адреса находятся. Обычно так бывает, "
+                "когда сайт пускает только российские адреса или не пускает адреса хостингов. Варианты:\n"
+                "  1) агент обхода на компьютере, где сайты открываются («Настройки» → «Проверка сайтов школ», "
+                "docs/АГЕНТ_ОБХОДА.md);\n"
+                "  2) прокси с российским адресом: CRAWLER_PROXY=http://логин:пароль@адрес:порт в .env;\n"
+                "  3) школы подтверждают размещение сами — по ссылке из письма (работает уже сейчас)."))

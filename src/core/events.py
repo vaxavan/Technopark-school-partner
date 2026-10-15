@@ -1,6 +1,7 @@
 """Запись событий и доставка уведомлений по ним."""
 
 import logging
+from datetime import timedelta
 
 from django.db import transaction
 from django.utils import timezone
@@ -40,21 +41,38 @@ def record(organization, kind, *, actor=None, obj=None, message="", **data):
     return event
 
 
+MAX_ATTEMPTS = 8
+BACKOFF_MINUTES = [1, 5, 15, 60, 180, 360, 720]   # почта недоступна — пробуем ещё почти сутки
+
+
 def deliver_pending(limit=100):
-    """Обрабатывает необработанные события. Повторяет до 5 раз."""
+    """Обрабатывает необработанные события. Каждое событие «захватывается» блокировкой строки,
+    поэтому два одновременно работающих процесса не отправят одно письмо дважды."""
+    from django.db.models import Q
+
+    now = timezone.now()
+    ids = list(Event.objects.filter(processed_at__isnull=True, attempts__lt=MAX_ATTEMPTS)
+               .filter(Q(retry_at__isnull=True) | Q(retry_at__lte=now))
+               .order_by("created_at").values_list("pk", flat=True)[:limit])
     done = 0
-    pending = Event.objects.filter(processed_at__isnull=True, attempts__lt=5).order_by("created_at")[:limit]
-    for event in pending:
-        fn = _HANDLERS.get(event.kind)
-        try:
-            if fn:
-                fn(event)
-            event.processed_at = timezone.now()
-            event.last_error = ""
-            done += 1
-        except Exception as exc:  # уведомление не должно ронять систему
-            log.exception("Не удалось обработать событие %s", event.pk)
-            event.last_error = str(exc)[:2000]
-        event.attempts += 1
-        event.save(update_fields=["processed_at", "last_error", "attempts"])
+    for pk in ids:
+        with transaction.atomic():
+            event = (Event.objects.select_for_update(skip_locked=True)
+                     .filter(pk=pk, processed_at__isnull=True).first())
+            if event is None:
+                continue  # уже обрабатывает другой процесс
+            fn = _HANDLERS.get(event.kind)
+            try:
+                if fn:
+                    fn(event)
+                event.processed_at = timezone.now()
+                event.last_error = ""
+                done += 1
+            except Exception as exc:  # уведомление не должно ронять систему
+                log.exception("Не удалось обработать событие %s", event.pk)
+                event.last_error = str(exc)[:2000]
+                pause = BACKOFF_MINUTES[min(event.attempts, len(BACKOFF_MINUTES) - 1)]
+                event.retry_at = timezone.now() + timedelta(minutes=pause)
+            event.attempts += 1
+            event.save(update_fields=["processed_at", "last_error", "attempts", "retry_at", "data"])
     return done

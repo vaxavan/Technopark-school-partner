@@ -28,6 +28,7 @@ from partners.models import FoundPublicationRecord, PlacementRecord, School, Sou
 from publishing.models import PLATFORM_CHANNELS, PlatformAccount, Publication
 from publishing.services import integration_modes, save_llm_account, save_platform_account
 from submissions import services as sub_services
+from submissions.clarify import MAX_ROUNDS
 from submissions.models import Submission
 
 from . import selectors
@@ -318,7 +319,7 @@ class SchoolViewSet(OrgScoped, viewsets.ModelViewSet):
     def check(self, request, pk=None):
         from partners.tasks import crawl_all
 
-        crawl_all.delay(request.org.id, self.get_object().id)
+        crawl_all.delay(request.org.id, self.get_object().id, force=True)
         return Response({"status": "started"}, status=status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=["get"])
@@ -362,7 +363,7 @@ class PlacementViewSet(OrgScoped, viewsets.ReadOnlyModelViewSet):
     def crawl(self, request):
         from partners.tasks import crawl_all
 
-        crawl_all.delay(request.org.id)
+        crawl_all.delay(request.org.id, force=True)
         return Response({"status": "started"}, status=status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=["post"])
@@ -457,12 +458,14 @@ class PublicOrgView(APIView):
 
 
 def _round_payload(sub):
-    rnd = sub_services.current_round(sub)
-    if rnd is None:
-        sub_services.finish_submission(sub)
-        return {"id": str(sub.public_id), "number": sub.number, "finished": True, "round": None}
-    return {"id": str(sub.public_id), "number": sub.number, "finished": False,
-            "round": {"number": rnd.number, "max": 3, "questions": rnd.questions}}
+    """Состояние уточнения. Если заявка ждёт модель — спрашиваем её здесь же (до ~30 с)."""
+    state = sub_services.prepare_round(sub)
+    payload = {"id": str(sub.public_id), "number": sub.number, "state": state,
+               "finished": state == sub_services.DONE, "round": None}
+    if state == sub_services.QUESTIONS:
+        rnd = sub_services.open_round(sub)
+        payload["round"] = {"number": rnd.number, "max": MAX_ROUNDS, "questions": rnd.questions}
+    return payload
 
 
 class PublicSubmissionCreate(APIView):
@@ -479,12 +482,14 @@ class PublicSubmissionCreate(APIView):
             raise ValidationError(form.errors)
         if form.cleaned_data.get("website"):
             raise ValidationError({"detail": "Отклонено"})
-        sub = sub_services.create_submission(org, form.cleaned_data, form.cleaned_data["photos"])
-        return Response(_round_payload(sub), status=status.HTTP_201_CREATED)
+        sub, created = sub_services.create_submission(org, form.cleaned_data, form.cleaned_data["photos"],
+                                                      form_token=form.cleaned_data.get("form_token"))
+        return Response(_round_payload(sub), status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
 class PublicSubmissionQuestions(APIView):
-    """GET — текущий раунд; POST {"answers": {"q1": "..."}} или {"skip": true} — ответить."""
+    """GET — текущий раунд; POST {"answers": {"q1": "..."}} или {"skip": true} — ответить.
+    state: thinking — модель ещё думает (повторите GET через 1–2 с), questions — вопросы, done — готово."""
     permission_classes = [AllowAny]
     throttle_classes = [PublicThrottle]
 
@@ -496,7 +501,8 @@ class PublicSubmissionQuestions(APIView):
 
     def post(self, request, code, sid):
         sub = self._sub(code, sid)
-        sub_services.answer_round(sub, request.data.get("answers") or {}, skip=bool(request.data.get("skip")))
+        sub_services.answer_round(sub, request.data.get("answers") or {}, skip=bool(request.data.get("skip")),
+                                  round_number=request.data.get("round"))
         return Response(_round_payload(sub))
 
 
@@ -585,6 +591,7 @@ class SettingsView(APIView):
             "organization": {"code": org.code, "name": org.name, "style_guide": org.style_guide},
             "modes": integration_modes(org),
             "llm": self._llm(org),
+            "crawl_agent": self._agent(org),
             "platforms": {ch: {"target_id": accs[ch].target_id if ch in accs else "",
                                "enabled": accs[ch].enabled if ch in accs else True,
                                "has_token": bool(ch in accs and accs[ch].token)}
@@ -598,6 +605,14 @@ class SettingsView(APIView):
         acc = LLMAccount.objects.filter(organization=org).first()
         return {"folder_id": acc.folder_id if acc else "", "model": acc.model if acc else "",
                 "model_lite": acc.model_lite if acc else "", "has_key": bool(acc and acc.api_key)}
+
+    @staticmethod
+    def _agent(org):
+        from partners.models import CrawlAgent
+
+        a = CrawlAgent.objects.filter(organization=org).first()
+        return {"connected": bool(a), "active": bool(a and a.is_active),
+                "last_seen_at": a.last_seen_at if a else None, "last_summary": a.last_summary if a else ""}
 
     def get(self, request):
         return Response(self._payload(request.org))
@@ -630,3 +645,21 @@ class LLMSettingsView(APIView):
         save_llm_account(request.org, api_key=d.get("api_key"), folder_id=d.get("folder_id"), model=d.get("model"),
                          model_lite=d.get("model_lite"), clear=bool(d.get("clear")), actor=request.user)
         return Response(SettingsView()._payload(request.org))
+
+
+class AgentSettingsView(APIView):
+    """POST — выдать новый ключ агента обхода (ответ содержит ключ, он показывается один раз);
+    DELETE — отключить агента."""
+    permission_classes = [IsOrgMember]
+
+    def post(self, request):
+        from partners.models import CrawlAgent
+
+        token = CrawlAgent.issue(request.org)
+        return Response({"token": token, **SettingsView._agent(request.org)}, status=status.HTTP_201_CREATED)
+
+    def delete(self, request):
+        from partners.models import CrawlAgent
+
+        CrawlAgent.objects.filter(organization=request.org).delete()
+        return Response(SettingsView._agent(request.org))

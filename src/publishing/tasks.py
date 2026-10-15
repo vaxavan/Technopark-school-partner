@@ -10,7 +10,7 @@ def publish_due():
     for pub_id in services.due_publications():
         if services.publish_one(pub_id) is not None:
             done += 1
-    return done
+    return done + services.release_partner_only_due()
 
 
 @shared_task(autoretry_for=(Exception,), retry_backoff=60, max_retries=3)

@@ -47,6 +47,7 @@ if not SECRET_KEY:
     raise RuntimeError("Задайте DJANGO_SECRET_KEY в .env")
 
 ALLOWED_HOSTS = [h.strip() for h in env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
+ALLOWED_HOSTS += [h for h in ("localhost", "127.0.0.1") if h not in ALLOWED_HOSTS]   # проверка после выкладки
 SITE_URL = env("SITE_URL", "http://localhost:8000").rstrip("/")
 # Адрес, по которому фоновые задачи открывают страницы самой системы (в Docker — через nginx)
 INTERNAL_SITE_URL = env("INTERNAL_SITE_URL", SITE_URL).rstrip("/")
@@ -205,11 +206,17 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
 CRAWL_HOUR = env_int("CRAWL_HOUR", 6)
+# expires: если воркер занят и задача не началась вовремя, она отменяется — следующая придёт по расписанию,
+# очередь не копит одинаковые задачи
 CELERY_BEAT_SCHEDULE = {
-    "publish-due": {"task": "publishing.tasks.publish_due", "schedule": 60.0},
-    "deliver-events": {"task": "core.tasks.deliver_events", "schedule": 30.0},
-    "crawl-placements": {"task": "partners.tasks.crawl_all", "schedule": crontab(hour=CRAWL_HOUR, minute=0)},
-    "send-reminders": {"task": "partners.tasks.send_reminders", "schedule": crontab(hour=CRAWL_HOUR + 3, minute=0)},
+    "publish-due": {"task": "publishing.tasks.publish_due", "schedule": 60.0, "options": {"expires": 55}},
+    "deliver-events": {"task": "core.tasks.deliver_events", "schedule": 30.0, "options": {"expires": 28}},
+    "crawl-placements": {"task": "partners.tasks.crawl_all", "schedule": crontab(hour=CRAWL_HOUR % 24, minute=0),
+                         "options": {"expires": 6 * 3600}},
+    "send-reminders": {"task": "partners.tasks.send_reminders",
+                       "schedule": crontab(hour=(CRAWL_HOUR + 3) % 24, minute=0), "options": {"expires": 6 * 3600}},
+    "finish-abandoned-submissions": {"task": "submissions.tasks.finish_abandoned_submissions", "schedule": 600.0,
+                                     "options": {"expires": 590}},
 }
 
 # ---------- Почта ----------
@@ -223,9 +230,10 @@ if EMAIL_HOST:
     EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
     EMAIL_TIMEOUT = 30
 else:
-    # Демо-режим: письма складываются файлами в media/outbox
+    # Демо-режим: письма складываются файлами в папку outbox рядом с media
     EMAIL_BACKEND = "django.core.mail.backends.filebased.EmailBackend"
-    EMAIL_FILE_PATH = MEDIA_ROOT / "outbox"
+    # не внутри MEDIA_ROOT: медиафайлы раздаются публично, а в письмах — персональные данные и ссылки школ
+    EMAIL_FILE_PATH = Path(env("EMAIL_FILE_PATH", str(MEDIA_ROOT.parent / "outbox")))
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL") or env("EMAIL_HOST_USER") or "noreply@localhost"
 MAIL_PAUSE_SECONDS = float(env("MAIL_PAUSE_SECONDS", "2") or 0)
 
@@ -256,7 +264,13 @@ FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY")
 REMINDERS_MAX = env_int("REMINDERS_MAX", 2)
 REMINDER_INTERVAL_DAYS = env_int("REMINDER_INTERVAL_DAYS", 3)
 SNAPSHOT_BACKEND = env("SNAPSHOT_BACKEND", "playwright")
-CRAWLER_USER_AGENT = "TechnoparkMonitor/1.0 (+контроль размещения материалов)"
+# Только латиница: заголовки HTTP передаются в кодировке latin-1, кириллица в них ломает запрос.
+# Начало как у обычного браузера — некоторые школьные сайты отказывают «незнакомым» программам.
+CRAWLER_USER_AGENT = env("CRAWLER_USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                                               "(KHTML, like Gecko) Chrome/126.0 Safari/537.36 TechnoparkMonitor/1.0")
+# Прокси для обращений к сайтам школ (если сайты не открываются с сервера), например
+# http://user:pass@host:3128 или socks5h://host:1080. Пусто — напрямую.
+CRAWLER_PROXY = env("CRAWLER_PROXY")
 
 LOGGING = {
     "version": 1,

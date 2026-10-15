@@ -82,7 +82,7 @@ def clean_model_text(text):
     text = text.strip()
     text = re.sub(r"^```\w*\s*|\s*```$", "", text)
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)  # площадки показывают звёздочки как есть
-    text = re.sub(r"^#+\s*", "", text, flags=re.M)
+    text = re.sub(r"^#+\s+", "", text, flags=re.M)  # заголовки Markdown («# Текст»), но не хештеги «#тег»
     return text.strip()
 
 
