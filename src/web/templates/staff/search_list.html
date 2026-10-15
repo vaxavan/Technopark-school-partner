@@ -1,0 +1,48 @@
+{% extends "staff/base.html" %}{% load ui %}
+{% block title %}Поиск по сайтам школ{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>Поиск по сайтам школ</h1>
+    <p class="muted">Найдём у школ любые публикации на тему — не только разосланные нами. Сайты проверяются в фоне;
+      по каждой найденной странице сохраняются ссылка, дата, фрагмент текста и снимок.
+      Итог — таблица «есть / нет» и архив со снимками.</p></div>
+</div>
+
+<div class="card">
+  <h2>Новый поиск</h2>
+  <form method="post">{% csrf_token %}
+    <div class="grid g2">
+      <div>
+        <label for="id_query">{{ form.query.label }}</label>{{ form.query }}<div class="help">{{ form.query.help_text }}</div>{{ form.query.errors }}
+        <label for="id_since">{{ form.since.label }}</label>{{ form.since }}<div class="help">{{ form.since.help_text }}</div>
+        <label class="inline-check" style="margin-top:12px">{{ form.screenshots }} {{ form.screenshots.label }}</label>
+        {% if agent_active %}<br><label class="inline-check">{{ form.on_server }} {{ form.on_server.label }}</label>
+          <div class="help">Агент обхода работает — по умолчанию сайты проверит он (с компьютера, где они открываются).</div>{% endif %}
+      </div>
+      <div>
+        <label>{{ form.schools.label }}</label><div class="school-checks">{{ form.schools }}</div><div class="help">{{ form.schools.help_text }}</div>
+      </div>
+    </div>
+    <p style="margin-top:14px"><button class="btn">Начать поиск</button>
+      <small class="muted">Один сайт проверяется от полуминуты до нескольких минут; страницу можно закрыть.</small></p>
+  </form>
+</div>
+
+{% if rows %}
+<div class="card table-wrap">
+  <h2>Поиски</h2>
+  <table>
+    <tr><th>Что искали</th><th>Когда</th><th>Состояние</th><th class="num">Проверено</th><th class="num">Есть</th><th class="num">Нет</th><th class="num">Не открылся</th><th></th></tr>
+    {% for r in rows %}{% with s=r.search sm=r.summary %}
+    <tr>
+      <td><a href="{% url 'search_detail' s.pk %}">«{{ s.query }}»</a>{% if s.since %}<br><small class="muted">с {{ s.since|date:"d.m.Y" }}</small>{% endif %}</td>
+      <td>{{ s.created_at|date:"d.m.Y H:i" }}</td>
+      <td>{% badge s.status s.get_status_display %}</td>
+      <td class="num">{{ sm.done }} из {{ sm.total }}</td>
+      <td class="num">{{ sm.found }}</td><td class="num">{{ sm.none }}</td><td class="num">{{ sm.unreachable }}</td>
+      <td><a href="{% url 'search_xlsx' s.pk %}">Excel</a> · <a href="{% url 'search_zip' s.pk %}">архив</a></td>
+    </tr>{% endwith %}{% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}

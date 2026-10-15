@@ -1,0 +1,36 @@
+{% load static %}<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ org.name }}{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'web/app.css' %}">
+</head>
+<body>
+<div class="public">
+  <header>
+    <div class="org-name">{{ org.name }}</div>
+  </header>
+  {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
+  {% block content %}{% endblock %}
+</div>
+<script>
+/* Формы с data-once отправляются один раз: повторное нажатие не создаёт дубль. */
+document.addEventListener("submit", function (e) {
+  var f = e.target;
+  if (!f.hasAttribute("data-once")) return;
+  if (f.dataset.sent) { e.preventDefault(); return; }
+  f.dataset.sent = "1";
+  var b = e.submitter || f.querySelector("button");
+  if (b) { b.dataset.label = b.textContent; b.classList.add("sending"); if (b.dataset.sending) b.textContent = b.dataset.sending; }
+});
+window.addEventListener("pageshow", function (e) {           // вернулись кнопкой «Назад»
+  if (!e.persisted) return;
+  document.querySelectorAll("form[data-once]").forEach(function (f) {
+    delete f.dataset.sent;
+    f.querySelectorAll(".sending").forEach(function (b) { b.classList.remove("sending"); b.textContent = b.dataset.label; });
+  });
+});
+</script>
+</body>
+</html>

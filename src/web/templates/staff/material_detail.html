@@ -1,0 +1,143 @@
+{% extends "staff/base.html" %}{% load ui %}
+{% block title %}{{ material.title }}{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>{{ material.title }}</h1>
+    <p class="muted">{% badge material.status material.get_status_display %} · заявка <a href="{% url 'submission_detail' sub.public_id %}">№{{ sub.number }}</a>
+      {% if material.scheduled_at %} · выход {{ material.scheduled_at|date:"j E, H:i" }}{% endif %}</p></div>
+  <div class="actions">
+    {% if 'regenerate' in actions %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="regenerate"><button class="btn ghost">Подготовить заново</button></form>{% endif %}
+    {% if 'unschedule' in actions %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="unschedule"><button class="btn ghost">Снять с публикации</button></form>{% endif %}
+    {% if 'retry' in actions %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="retry"><button class="btn">Повторить публикацию</button></form>{% endif %}
+    {% if material.status == 'published' and 'partners' in material.channels %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="dispatch"><button class="btn ghost" title="Разослать школам, которым ещё не отправляли">Разослать школам</button></form>{% endif %}
+  </div>
+</div>
+
+{% if material.status == 'preparing' %}
+  {% if preparing_stuck %}
+    <div class="msg error">Тексты готовятся дольше 10 минут — похоже, подготовка прервалась.
+      <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="stop_generation">
+        <button class="btn small">Перейти к ручной правке</button></form></div>
+  {% else %}
+    <div class="msg info">Модель готовит тексты. Страница обновится сама.</div>
+    <script>setTimeout(function(){ location.reload(); }, 5000);</script>
+  {% endif %}
+{% endif %}
+{% if material.generation_error %}<div class="msg error">Модель была недоступна: {{ material.generation_error }}. Тексты нужно подготовить вручную — черновики созданы из заявки.</div>{% endif %}
+
+<div class="split">
+  <div>
+    <div class="card">
+      <h2>Исходный текст автора</h2>
+      <p class="help">Всегда рядом с вариантами — сверяйте факты.</p>
+      <div class="source">{{ sub.full_text_for_model }}</div>
+      {% with photos=sub.photos.all %}{% if photos %}<div class="photos" style="margin-top:10px">{% for p in photos %}<a href="{{ p.image.url }}" target="_blank"><img src="{{ p.image.url }}" alt=""></a>{% endfor %}</div>{% endif %}{% endwith %}
+    </div>
+
+    {% if material.status == 'on_approval' %}
+    <div class="card">
+      <h2>Утверждение</h2>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="approve">
+        <label for="id_basis">{{ approve_form.basis.label }}</label>{{ approve_form.basis }}
+        {% if current_role != 'director' %}<p class="help">Отметку «утвердил директор» ставит только директор. Директор получит уведомление.</p>{% endif %}
+        <label for="id_scheduled_at">{{ approve_form.scheduled_at.label }}</label>{{ approve_form.scheduled_at }}
+        <label for="id_comment">{{ approve_form.comment.label }}</label>{{ approve_form.comment }}
+        <p style="margin-top:12px"><button class="btn ok">Утвердить и поставить в расписание</button></p>
+      </form>
+      <details style="margin-top:10px"><summary>Отклонить материал</summary>
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="reject">
+          <textarea name="reason" rows="2" placeholder="Причина — уйдёт автору"></textarea>
+          <p style="margin-top:8px"><button class="btn danger">Отклонить</button></p></form>
+      </details>
+      <details style="margin-top:10px"><summary>Площадки</summary>
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="channels">
+          <div class="checks">{% for v, l in all_channels %}<label><input type="checkbox" name="channels" value="{{ v }}" {% if v in material.channels %}checked{% endif %}> {{ l }}</label>{% endfor %}</div>
+          <p style="margin-top:8px"><button class="btn ghost small">Сохранить площадки</button></p></form>
+      </details>
+    </div>
+    {% endif %}
+
+    {% if approvals %}
+    <div class="card"><h2>Утверждения</h2>
+      <ul class="timeline">{% for a in approvals %}<li>{{ a.created_at|date:"d.m.Y H:i" }} — <strong>{{ a.get_basis_display }}</strong> ({{ a.user }}){% if a.comment %}: {{ a.comment }}{% endif %}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="tabs">{% for t in tabs %}<a href="?ch={{ t.code }}" class="{% if t.code == channel %}on{% endif %}">{{ t.label }}{% if t.warn %}<span class="dot" title="Есть замечания"></span>{% endif %}</a>{% endfor %}</div>
+      {% if current %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="save_text"><input type="hidden" name="channel" value="{{ channel }}">
+          <textarea id="vtext" name="text" rows="16" {% if material.status != 'on_approval' %}readonly{% endif %}>{{ current.text }}</textarea>
+          <div class="actions" style="justify-content:space-between;margin-top:6px">
+            <span class="counter" id="counter" data-lo="{{ limit_lo }}" data-hi="{{ limit_hi }}"></span>
+            <small class="muted">Версия {{ current.version }} · {{ current.get_source_display }}{% if current.attempts > 1 %} · попыток модели: {{ current.attempts }}{% endif %}
+              · ручных правок {{ current.manual_share|pct }}, правок моделью {{ current.model_edit_share|pct }}</small>
+          </div>
+          {% if current.checks %}<ul class="issues">{% for c in current.checks %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
+          {% if material.status == 'on_approval' %}<p style="margin-top:8px"><button class="btn">Сохранить правку</button></p>{% endif %}
+        </form>
+        {% if material.status == 'on_approval' %}
+        <form method="post" style="margin-top:12px">{% csrf_token %}<input type="hidden" name="action" value="command"><input type="hidden" name="channel" value="{{ channel }}">
+          <label>Править с помощью модели</label>
+          <div class="actions">{% for code, text in commands %}<button class="btn ghost small" name="command" value="{{ code }}" title="{{ text }}">{{ command_labels|get:code }}</button>{% endfor %}</div>
+          <div class="actions" style="margin-top:8px"><input type="text" name="custom" placeholder="Своя команда: например, «добавь призыв записаться на курс»" style="flex:1"><button class="btn ghost small">Выполнить</button></div>
+        </form>
+        {% endif %}
+        <p class="help" style="margin-top:10px">Требования площадки: {{ hint }}. Рекомендуемая длина {{ limit_lo }}–{{ limit_hi }} знаков.</p>
+      {% else %}
+        <p class="muted">Текста для этой площадки пока нет.</p>
+      {% endif %}
+    </div>
+
+    {% if history|length > 1 %}
+    <div class="card"><details><summary>Версии ({{ history|length }})</summary>
+      <ul class="timeline">{% for v in history %}<li>
+        <strong>v{{ v.version }}</strong> · {{ v.get_source_display }}{% if v.instruction %} «{{ v.instruction|truncatechars:60 }}»{% endif %} · {{ v.created_at|date:"d.m H:i" }}{% if v.created_by %} · {{ v.created_by }}{% endif %}
+        {% if not v.is_current and material.status == 'on_approval' %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="restore"><input type="hidden" name="variant_id" value="{{ v.id }}"><button class="btn ghost small">Вернуть</button></form>{% endif %}
+        <details><summary style="font-weight:400">текст</summary><div class="source">{{ v.text }}</div></details>
+      </li>{% endfor %}</ul></details></div>
+    {% endif %}
+
+    {% if publications %}
+    <div class="card"><h2>Публикации</h2>
+      <table>
+        <tr><th>Площадка</th><th>Состояние</th><th>Время</th><th>Доказательство</th></tr>
+        {% for p in publications %}
+        <tr>
+          <td>{{ p.get_channel_display }}{% if p.demo %} <span class="badge b-warn">демо</span>{% endif %}</td>
+          <td>{% badge p.status p.get_status_display %}{% if p.error %}<br><small class="muted">{{ p.error }}</small>{% endif %}
+            {% if p.status == 'needs_check' or p.status == 'failed' %}
+            <form method="post" class="actions" style="margin-top:6px">{% csrf_token %}<input type="hidden" name="action" value="mark_published"><input type="hidden" name="publication_id" value="{{ p.id }}">
+              <input type="url" name="url" placeholder="ссылка на вышедший пост" style="width:200px"><button class="btn ghost small">Вышло</button></form>
+            {% if p.status == 'needs_check' %}<small class="muted">Сначала проверьте площадку: если пост вышел — «Вышло», если нет — «Повторить публикацию».</small>{% endif %}
+            <form method="post" style="margin-top:4px" onsubmit="return confirm('Не публиковать материал на этой площадке?')">{% csrf_token %}<input type="hidden" name="action" value="drop_channel"><input type="hidden" name="publication_id" value="{{ p.id }}"><button class="btn danger small">Не публиковать здесь</button></form>{% endif %}
+          </td>
+          <td>{{ p.published_at|default:p.scheduled_at|date:"d.m H:i" }}{% if p.url %}<br><a href="{{ p.url }}" target="_blank">открыть</a>{% endif %}</td>
+          <td>{% for e in p.evidence.all %}{% if e.screenshot %}<a href="{{ e.screenshot.url }}" target="_blank">снимок</a> · {% endif %}{% if e.html_copy %}<a href="{{ e.html_copy.url }}" target="_blank">копия</a>{% endif %}<br><small title="SHA-256">{{ e.checksum|truncatechars:14 }}</small>{% empty %}<small class="muted">—</small>{% endfor %}</td>
+        </tr>{% endfor %}
+      </table>
+    </div>
+    {% endif %}
+
+    {% if placements %}
+    <div class="card"><h2>Размещение у школ</h2>
+      <p>Подтверждено {{ placements.counts.confirmed|default:0 }} из {{ placements.total }} ({{ placements.share }}%), требует решения {{ placements.counts.disputed|default:0 }}.</p>
+      <a class="btn ghost small" href="{% url 'partners_report' %}?m={{ material.public_id }}">Отчёт по школам →</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var t = document.getElementById('vtext'), c = document.getElementById('counter');
+  if (!t || !c) return;
+  var lo = +c.dataset.lo, hi = +c.dataset.hi;
+  function upd() { var n = t.value.length; c.textContent = n + ' / ' + hi + ' знаков'; c.className = 'counter' + (n > hi || n < lo ? ' over' : ''); }
+  t.addEventListener('input', upd); upd();
+})();
+</script>
+{% endblock %}

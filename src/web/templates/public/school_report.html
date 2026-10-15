@@ -1,0 +1,20 @@
+{% extends "public/base.html" %}
+{% block title %}Отметить размещение{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Отметить размещение материала</h1>
+  <p><strong>{{ placement.school.name }}</strong></p>
+  <p>Материал: «{{ placement.material.title }}»</p>
+  {% if placement.status == 'confirmed' %}
+    <p class="msg success">Размещение подтверждено{% if placement.found_url %}: <a href="{{ placement.found_url }}">{{ placement.found_url }}</a>{% endif %}. Спасибо!</p>
+  {% elif result %}
+    <p class="msg info">Ссылка получена. Текст отличается от исходного, поэтому редакция проверит её вручную.</p>
+  {% else %}
+    <p class="muted">Если вы уже разместили материал, вставьте ссылку на публикацию — система сама сверит текст.</p>
+    <form method="post" data-once>{% csrf_token %}
+      {{ form.url.errors }}<label for="id_url">{{ form.url.label }}</label>{{ form.url }}
+      <p style="margin-top:12px"><button class="btn">Отправить</button></p>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

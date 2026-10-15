@@ -1,0 +1,15 @@
+{% extends "staff/base.html" %}{% load ui %}
+{% block title %}Расписание{% endblock %}
+{% block content %}
+<div class="head"><h1>Расписание публикаций</h1></div>
+{% for day, pubs in days %}
+<div class="card">
+  <h2>{{ day|date:"l, j E Y" }}{% if day == today %} · сегодня{% endif %}</h2>
+  <table>{% for p in pubs %}
+    <tr><td style="width:70px">{{ p.published_at|default:p.scheduled_at|time:"H:i" }}</td><td style="width:130px">{{ p.get_channel_display }}</td>
+      <td><a href="{% url 'material_detail' p.material.public_id %}">{{ p.material.title }}</a></td>
+      <td style="width:160px">{% badge p.status p.get_status_display %}{% if p.demo %} <span class="badge b-warn">демо</span>{% endif %}</td></tr>
+  {% endfor %}</table>
+</div>
+{% empty %}<div class="card muted">Публикаций пока нет. Они появляются после утверждения материала.</div>{% endfor %}
+{% endblock %}

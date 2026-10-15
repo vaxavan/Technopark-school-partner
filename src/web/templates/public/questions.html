@@ -1,0 +1,33 @@
+{% extends "public/base.html" %}
+{% block title %}Уточняющие вопросы{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Пара уточнений</h1>
+  <p class="muted">Заявка №{{ sub.number }} сохранена. Ответьте, пожалуйста, — так новость получится точнее.
+    Можно пропустить.{% if max_rounds > 1 %} Вопросы {{ round.number }} из {{ max_rounds }}.{% endif %}</p>
+  <form method="post" data-once>
+    {% csrf_token %}<input type="hidden" name="round" value="{{ round.number }}">
+    {% for q in round.questions %}
+      <div class="q">
+        <label for="{{ q.id }}">{{ q.text }}</label>
+        {% if q.type == 'yes_no' %}
+          <div class="choice-row">
+            <label><input type="radio" name="{{ q.id }}" value="да">Да</label>
+            <label><input type="radio" name="{{ q.id }}" value="нет">Нет</label>
+          </div>
+        {% elif q.type == 'choice' %}
+          <div class="choice-row">
+            {% for o in q.options %}<label><input type="radio" name="{{ q.id }}" value="{{ o }}">{{ o }}</label>{% endfor %}
+          </div>
+        {% else %}
+          <input type="text" id="{{ q.id }}" name="{{ q.id }}" maxlength="1000">
+        {% endif %}
+      </div>
+    {% endfor %}
+    <div class="actions" style="margin-top:16px">
+      <button class="btn" name="answer" value="1" data-sending="Отправляем…">Ответить</button>
+      <button class="btn ghost" name="skip" value="1">Пропустить</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

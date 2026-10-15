@@ -1,0 +1,16 @@
+{% load static %}<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход</title><link rel="stylesheet" href="{% static 'web/app.css' %}"></head>
+<body><div class="public" style="max-width:420px">
+  <div class="card" style="margin-top:10vh">
+    <h1>Вход</h1>
+    <p class="muted">Рабочее место администратора и директора</p>
+    <form method="post">{% csrf_token %}
+      {% if form.errors %}<p class="msg error">Неверный e-mail или пароль</p>{% endif %}
+      <label for="id_username">E-mail</label>{{ form.username }}
+      <label for="id_password">Пароль</label>{{ form.password }}
+      <input type="hidden" name="next" value="{{ next }}">
+      <p style="margin-top:16px"><button class="btn">Войти</button></p>
+    </form>
+  </div>
+</div></body></html>

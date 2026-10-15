@@ -1,0 +1,15 @@
+{% extends "public/base.html" %}
+{% block title %}Дополнить заявку{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Дополнить заявку №{{ sub.number }}</h1>
+  <p><strong>{{ sub.title }}</strong></p>
+  <p class="msg info">Редакция просит: {{ sub.decision_reason }}</p>
+  <form method="post" enctype="multipart/form-data" data-once>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for f in form %}<label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}{{ f.errors }}{% endfor %}
+    <p style="margin-top:16px"><button class="btn">Отправить</button></p>
+  </form>
+</div>
+{% endblock %}
