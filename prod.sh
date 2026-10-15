@@ -14,8 +14,8 @@ cd "$(dirname "$0")"
 DC="docker compose -p technopark"
 
 case "$1" in
-  up)      $DC up -d --build && $DC ps ;;
-  update)  git pull && $DC up -d --build && $DC ps ;;
+  up)      $DC up -d --build && $DC restart nginx && $DC ps ;;
+  update)  git pull && $DC up -d --build && $DC restart nginx && $DC ps ;;
   logs)    $DC logs -f --tail=100 ${2:-} ;;
   check)   $DC exec web python manage.py check_integrations ;;
   backup)  mkdir -p backups && $DC exec -T db pg_dump -U technopark technopark | gzip > "backups/db-$(date +%F-%H%M).sql.gz" \

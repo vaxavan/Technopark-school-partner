@@ -38,6 +38,7 @@ jobs:
             git reset -q --hard origin/$BRANCH
             # файлы compose берутся из COMPOSE_FILE в .env (с доменом — вместе с docker-compose.prod.yml)
             docker compose -p technopark up -d --build --remove-orphans
+            docker compose -p technopark restart nginx   # перечитать настройки nginx
             # удаляем только старые образы этого проекта, чужие не трогаем
             docker image prune -f --filter label=com.docker.compose.project=technopark >/dev/null
             sleep 15
