@@ -11,6 +11,8 @@ from core.events import record
 from core.ports import PlatformError
 from materials.models import Channel, Material, MaterialStatus
 
+from integrations.images import prepared as prepared_images
+
 from .evidence import capture_evidence
 from .models import Publication, PublicationStatus
 from .platforms import platform_for
@@ -71,12 +73,18 @@ def publish_one(publication_id):
             result_id, demo = str(material.public_id), False
         else:
             platform = platform_for(org, pub.channel)
-            result = platform.publish(text, images)
+            # фото приводим к JPEG до 2560 px: площадки не принимают HEIC и слишком большие файлы
+            with prepared_images(images) as (jpegs, skipped):
+                result = platform.publish(text, jpegs)
+            warnings = [f"не удалось прочитать фото: {', '.join(skipped)}"] if skipped else []
+            warnings += getattr(platform, "warnings", [])
             demo = platform.demo
             result_id = result.external_id
             # у демо-площадки адрес — наша страница; у настоящей площадки без ссылки (закрытый канал)
             # адрес оставляем пустым, чтобы «доказательством» не стала демо-страница
             url = result.url or (f"{settings.SITE_URL}/demo/{pub.channel}/{material.public_id}/" if demo else "")
+        if pub.channel == Channel.DZEN:
+            warnings = []
     except Exception as exc:  # любая ошибка — «ошибка публикации», которую можно повторить, а не зависание
         if not isinstance(exc, PlatformError):
             log.exception("Сбой публикации %s", pub.pk)
@@ -90,10 +98,14 @@ def publish_one(publication_id):
 
     pub.status = PublicationStatus.PUBLISHED
     pub.published_at = timezone.now()
-    pub.external_id, pub.url, pub.demo, pub.error = result_id, url, demo, ""
+    pub.external_id, pub.url, pub.demo = result_id, url, demo
+    pub.error = "; ".join(warnings)[:2000]   # пост вышел, но с оговорками (например, без фото)
     pub.save(update_fields=["status", "published_at", "external_id", "url", "demo", "error"])
     record(org, "publication.published", obj=material,
            message=f"{pub.get_channel_display()}{' (демо)' if demo else ''}: {url}", channel=pub.channel, url=url)
+    if warnings:
+        record(org, "publication.warning", obj=material,
+               message=f"{pub.get_channel_display()}: {'; '.join(warnings)}"[:500], channel=pub.channel)
     if url:
         from .tasks import capture_publication_evidence
 

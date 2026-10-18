@@ -103,3 +103,20 @@ def test_rejected_photo_falls_back_to_text(monkeypatch, tmp_path):
     monkeypatch.setattr("publishing.platforms.requests.post", fake_post)
     r = TelegramPlatform("@istok_test", "T").publish("Текст", [str(img)])
     assert log == ["sendPhoto", "sendMessage"] and r.url == "https://t.me/istok_test/3"
+
+
+def test_photos_are_converted_before_publishing(tmp_path):
+    """Большое PNG с прозрачностью превращается в JPEG до 2560 px; нечитаемый файл пропускается."""
+    from PIL import Image
+
+    from integrations.images import prepared
+
+    big = tmp_path / "big.png"
+    Image.new("RGBA", (5000, 3000), (10, 20, 30, 128)).save(big)
+    broken = tmp_path / "broken.heic"
+    broken.write_bytes(b"not an image")
+    with prepared([str(big), str(broken)]) as (jpegs, skipped):
+        assert len(jpegs) == 1 and jpegs[0].endswith(".jpg")
+        with Image.open(jpegs[0]) as im:
+            assert im.format == "JPEG" and max(im.size) == 2560
+        assert skipped == ["broken.heic"]

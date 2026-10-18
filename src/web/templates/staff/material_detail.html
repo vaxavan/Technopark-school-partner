@@ -91,6 +91,16 @@
       {% endif %}
     </div>
 
+    {% if current %}
+    <div class="card">
+      <div class="actions" style="justify-content:space-between"><h2 style="margin:0">Предпросмотр: {{ channel_label }}</h2>
+        {% if channel == 'dzen' %}<a class="btn ghost small" href="{% url 'news_page' material.organization.code material.public_id %}" target="_blank">Открыть как статью</a>{% endif %}</div>
+      <p class="help">Примерно так пост будет выглядеть на площадке. Меняется сразу, пока вы правите текст.</p>
+      <div id="preview" class="pv"></div>
+    </div>
+    {{ preview_data|json_script:"preview-data" }}
+    {% endif %}
+
     {% if history|length > 1 %}
     <div class="card"><details><summary>Версии ({{ history|length }})</summary>
       <ul class="timeline">{% for v in history %}<li>
@@ -138,6 +148,66 @@
   var lo = +c.dataset.lo, hi = +c.dataset.hi;
   function upd() { var n = t.value.length; c.textContent = n + ' / ' + hi + ' знаков'; c.className = 'counter' + (n > hi || n < lo ? ' over' : ''); }
   t.addEventListener('input', upd); upd();
+})();
+
+/* Предпросмотр поста: та же разметка абзацев, хештегов и фото, что увидит читатель площадки */
+(function () {
+  var box = document.getElementById('preview'), t = document.getElementById('vtext'),
+      el = document.getElementById('preview-data');
+  if (!box || !t || !el) return;
+  var d = JSON.parse(el.textContent);
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+  function paras(text, tags) {
+    return text.split(/\n\s*\n|\n/).filter(function (p) { return p.trim(); }).map(function (p) {
+      var h = esc(p.trim());
+      if (tags) h = h.replace(/(^|\s)(#[\wа-яё]+)/gi, '$1<span class="pv-tag">$2</span>');
+      return '<p>' + h + '</p>';
+    }).join('');
+  }
+  function photos(max, cls) {
+    var list = d.photos.slice(0, max);
+    if (!list.length) return '';
+    return '<div class="pv-photos ' + cls + ' n' + Math.min(list.length, 4) + '">' + list.slice(0, 4).map(function (u, i) {
+      var more = (i === 3 && list.length > 4) ? '<span class="pv-more">+' + (list.length - 4) + '</span>' : '';
+      return '<div class="pv-ph" style="background-image:url(\'' + u + '\')">' + more + '</div>';
+    }).join('') + '</div>';
+  }
+  function head(sub) {
+    return '<div class="pv-head"><span class="pv-ava">' + esc(d.org.charAt(0)) + '</span><div><b>' + esc(d.org) +
+      '</b><small>' + sub + '</small></div></div>';
+  }
+  function render() {
+    var text = t.value.trim(), html = '';
+    if (d.channel === 'vk') {
+      html = '<div class="pv-vk">' + head('сейчас · ВКонтакте') + '<div class="pv-text">' + paras(text, true) + '</div>' +
+             photos(10, 'grid') + '<div class="pv-foot">♡ 0 &nbsp; 💬 0 &nbsp; ↪ 0</div></div>';
+    } else if (d.channel === 'telegram') {
+      var fits = text.length <= 1024;
+      html = '<div class="pv-tg"><div class="pv-bubble">' + photos(10, 'grid') +
+             (fits || !d.photos.length ? '<div class="pv-text">' + paras(text, true) + '</div>' : '') +
+             '<div class="pv-meta">👁 1 · сейчас</div></div>' +
+             (!fits && d.photos.length ? '<div class="pv-bubble"><div class="pv-text">' + paras(text, true) +
+             '</div><div class="pv-meta">сейчас</div></div><p class="help">Текст длиннее 1024 знаков: подпись к фото не поместится, ' +
+             'поэтому текст уйдёт отдельным сообщением после фото.</p>' : '') + '</div>';
+    } else if (d.channel === 'max') {
+      html = '<div class="pv-max"><div class="pv-bubble">' + (d.photos.length ? photos(1, 'one') : '') +
+             '<div class="pv-text">' + paras(text, false) + '</div><div class="pv-meta">сейчас</div></div>' +
+             (d.photos.length > 1 ? '<p class="help">В Max уходит одно фото — первое.</p>' : '') + '</div>';
+    } else if (d.channel === 'dzen') {
+      var lines = text.split('\n'), title = lines.shift() || d.title;
+      html = '<div class="pv-dzen"><div class="pv-src">' + esc(d.org) + ' · статья</div><h3>' + esc(title) + '</h3>' +
+             (d.photos.length ? photos(1, 'cover') : '') + '<div class="pv-text">' + paras(lines.join('\n'), false) + '</div></div>';
+    } else {
+      var lines2 = text.split('\n'), title2 = lines2.shift() || d.title;
+      html = '<div class="pv-mail"><div class="pv-mailhead"><b>Тема:</b> Материал для размещения: ' + esc(d.title) +
+             '<br><b>Кому:</b> школы-партнёры (каждой — отдельное письмо)</div><div class="pv-text"><p>Здравствуйте!</p><p>' +
+             esc(d.org) + ' просит разместить материал на сайте или в сообществе школы.</p><h3>' + esc(title2) + '</h3>' +
+             paras(lines2.join('\n'), false) + (d.photos.length ? '<p><i>Фотографии — во вложении (' + d.photos.length + ').</i></p>' : '') +
+             '<p><i>Если удобно, пришлите ссылку на публикацию: [персональная ссылка школы]</i></p></div></div>';
+    }
+    box.innerHTML = html;
+  }
+  t.addEventListener('input', render); render();
 })();
 </script>
 {% endblock %}

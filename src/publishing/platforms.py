@@ -14,6 +14,11 @@ from materials.models import Channel
 log = logging.getLogger(__name__)
 
 
+def _warn(platform, message):
+    """Предупреждение для журнала: пост вышел, но что-то пошло не так (например, без фото)."""
+    platform.__dict__.setdefault("warnings", []).append(message)
+
+
 class VkPlatform:
     """Публикация на стену сообщества ВКонтакте от имени сообщества.
 
@@ -59,6 +64,7 @@ class VkPlatform:
             except PlatformError as exc:
                 # без прав photos пост уходит без фото — это лучше, чем не уйти вовсе
                 log.warning("Фото не загружено во ВКонтакте: %s", exc)
+                _warn(self, f"фото не загружены: {exc}")
                 break
         resp = self._call("wall.post", owner_id=f"-{self.group_id}", from_group=1, message=text,
                           attachments=",".join(attachments))
@@ -115,6 +121,7 @@ class MaxPlatform:
                 body["attachments"] = [self._upload_image(image_paths[0])]
             except PlatformError as exc:
                 log.warning("Фото не загружено в Max: %s", exc)
+                _warn(self, f"фото не загружено: {exc}")
         last_exc = None
         for attempt in range(4):  # вложение может быть ещё не готово (attachment.not.ready)
             try:
@@ -187,6 +194,7 @@ class TelegramPlatform:
                 raise
             # Telegram не принял фото (больше 10 МБ, формат HEIC и т. п.) — публикуем хотя бы текст
             log.warning("Telegram не принял фото, публикуем текст без фото: %s", exc)
+            _warn(self, f"Telegram не принял фото ({exc}) — пост вышел без фото")
             msg = self._call("sendMessage", data={"chat_id": self.chat_id, "text": text})
             return PostResult(external_id=str(msg.get("message_id")), url=self.post_url(msg), raw=msg)
 

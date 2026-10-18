@@ -135,3 +135,11 @@ def test_old_page_cannot_answer_next_round(org, monkeypatch):
     sub_services.prepare_round(sub)                                          # второй раунд
     sub_services.answer_round(sub, {"q1": "старый ответ"}, round_number=1)   # кнопка «Назад» + отправить
     assert sub_services.open_round(sub).number == 2 and not sub_services.open_round(sub).answers
+
+
+@pytest.mark.django_db
+def test_material_page_has_platform_preview(client, submission, admin_user):
+    material = services.accept_submission(submission, admin_user, [Channel.VK, Channel.TELEGRAM])
+    client.force_login(admin_user)
+    page = client.get(f"/app/materials/{material.public_id}/?ch=telegram").content.decode()
+    assert 'id="preview"' in page and '"channel": "telegram"' in page

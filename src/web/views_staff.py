@@ -205,6 +205,8 @@ def material_detail(request, mid):
                        and timezone.now() - material.updated_at > services.PREPARING_STUCK_AFTER)
     return render(request, "staff/material_detail.html", {
         "preparing_stuck": preparing_stuck,
+        "preview_data": {"channel": channel, "org": material.organization.name, "title": material.title,
+                         "photos": [ph.image.url for ph in material.submission.photos.all() if ph.image]},
         "material": material, "sub": material.submission, "channel": channel, "channel_label": Channel(channel).label
         if channel in Channel.values else channel, "current": current, "limit_lo": lo, "limit_hi": hi, "hint": hint,
         "tabs": tabs, "history": material.variants.filter(channel=channel).order_by("-version"),
