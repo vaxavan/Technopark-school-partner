@@ -1,0 +1,10 @@
+{% extends "public/base.html" %}
+{% block title %}Заявка принята{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Спасибо! Заявка №{{ sub.number }} принята</h1>
+  <p>Мы получили информацию «{{ sub.title }}». Решение придёт на {{ sub.author_email }}.</p>
+  <p class="muted">Если потребуется что-то дополнить, в письме будет ссылка.</p>
+  <p><a href="{% url 'public_form' org.code %}">Отправить ещё одну заявку</a></p>
+</div>
+{% endblock %}

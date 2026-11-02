@@ -1,0 +1,29 @@
+# Виртуальное окружение Python
+.venv/
+venv/
+
+# Секретные настройки
+.env
+.env.*
+!.env.example
+
+# Временные файлы Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Данные, которые создаёт система при работе
+media/
+staticfiles/
+*.sqlite3
+
+# Настройки IDE и системы
+.idea/
+.vscode/
+.DS_Store
+
+# Локальный Redis
+dump.rdb
+
+# Резервные копии базы на сервере
+backups/

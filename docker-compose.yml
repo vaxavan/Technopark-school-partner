@@ -1,0 +1,84 @@
+# Запуск:  docker compose up -d --build
+#
+# Ограничения памяти (mem_limit) нужны, если на сервере работают другие проекты:
+# если системе не хватит памяти, ядро остановит процесс внутри её контейнера,
+# а не чужое приложение. Суммарно не больше ~1,4 ГБ.
+# Открыть: http://localhost:8000 (порт меняется переменной HTTP_PORT в .env)
+x-app: &app
+  build: .
+  env_file: .env
+  environment:
+    POSTGRES_HOST: db
+    POSTGRES_DB: technopark
+    POSTGRES_USER: technopark
+    POSTGRES_PASSWORD: technopark
+    REDIS_URL: redis://redis:6379/0
+    MEDIA_ROOT: /app/media
+    CELERY_TASK_ALWAYS_EAGER: "0"
+    INTERNAL_SITE_URL: http://nginx
+  volumes:
+    - media:/app/media
+  depends_on:
+    - db
+    - redis
+  restart: unless-stopped
+
+services:
+  web:
+    <<: *app
+    mem_limit: ${WEB_MEM_LIMIT:-400m}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: technopark
+      POSTGRES_USER: technopark
+      POSTGRES_PASSWORD: technopark
+      REDIS_URL: redis://redis:6379/0
+      MEDIA_ROOT: /app/media
+      CELERY_TASK_ALWAYS_EAGER: "0"
+      INTERNAL_SITE_URL: http://nginx
+      RUN_MIGRATIONS: "1"
+    # потоки: пока один запрос ждёт ответа модели (до ~30 с), остальные посетители не ждут
+    command: sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers $${WEB_WORKERS:-3} --worker-class gthread --threads 4 --timeout 120"
+
+  worker:
+    <<: *app
+    mem_limit: ${WORKER_MEM_LIMIT:-600m}   # здесь же браузер для снимков
+    command: sh -c "celery -A config worker --loglevel=info --concurrency=$${CELERY_CONCURRENCY:-2}"
+
+  beat:
+    <<: *app
+    mem_limit: 150m
+    command: celery -A config beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+
+  nginx:
+    image: nginx:1.27-alpine
+    mem_limit: 64m
+    ports:
+      - "${HTTP_PORT:-8000}:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - media:/media:ro
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    mem_limit: 256m
+    environment:
+      POSTGRES_DB: technopark
+      POSTGRES_USER: technopark
+      POSTGRES_PASSWORD: technopark
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    mem_limit: 64m
+    command: redis-server --maxmemory 48mb --maxmemory-policy noeviction
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  media:

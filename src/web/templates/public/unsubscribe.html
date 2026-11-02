@@ -1,0 +1,13 @@
+{% extends "public/base.html" %}
+{% block title %}Отписка от рассылки{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Отписка от рассылки</h1>
+  {% if done %}
+    <p class="msg success">{{ placement.school.name }} больше не будет получать материалы по e-mail.</p>
+  {% else %}
+    <p>Отписать <strong>{{ placement.school.name }}</strong> от рассылки материалов {{ org.name }}?</p>
+    <form method="post" data-once>{% csrf_token %}<button class="btn danger">Отписаться</button></form>
+  {% endif %}
+</div>
+{% endblock %}

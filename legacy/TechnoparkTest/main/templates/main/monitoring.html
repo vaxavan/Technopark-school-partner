@@ -1,0 +1,182 @@
+={% extends 'main/layout.html' %}
+
+{% block title %}
+Мониторинг школ
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    const button = document.getElementById("startMonitoringBtn");
+    const message = document.getElementById("monitoringMessage");
+
+    button.addEventListener("click", async function () {
+
+        button.disabled = true;
+        message.textContent = "Запускаем проверку школ...";
+
+        try {
+
+            const response = await fetch(
+                "{% url 'start_monitoring' %}",
+                {
+                    method: "POST",
+                    headers: {
+                        "X-CSRFToken": "{{ csrf_token }}"
+                    }
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "Ошибка запуска");
+            }
+
+            message.textContent =
+                "Мониторинг запущен. Проверка может занять несколько минут. " +
+                "Обновите страницу позже, чтобы увидеть результаты.";
+
+        } catch (error) {
+
+            message.textContent = "Ошибка: " + error.message;
+
+        } finally {
+
+            button.disabled = false;
+
+        }
+
+    });
+
+});
+</script>
+
+{% endblock %}
+
+{% block content %}
+
+<div class="monitoring-page">
+
+    <h1>Мониторинг школ-партнёров</h1>
+
+    <p>
+        Автоматизированная проверка размещения информационных
+        материалов технопарка на сайтах образовательных организаций.
+    </p>
+
+    <!-- Дата последней проверки -->
+    {% if checked_at %}
+        <p>
+            <strong>Последняя проверка:</strong>
+            {{ checked_at }}
+        </p>
+    {% endif %}
+
+    <!-- Сообщение об ошибке -->
+    {% if error %}
+        <p style="color: #d32f2f;">
+            {{ error }}
+        </p>
+    {% endif %}
+
+    <div class="monitoring-header">
+
+        <h2>Результаты мониторинга</h2>
+
+        <!-- Пока кнопка неактивна.
+             Позже подключим запуск парсера через Django. -->
+        <button type="button" id="startMonitoringBtn">
+            Запустить мониторинг
+        </button>
+
+        <p id="monitoringMessage"></p>
+
+    </div>
+
+    <!-- Таблица результатов -->
+    <table class="monitoring-table">
+
+        <thead>
+            <tr>
+                <th>Школа</th>
+                <th>Совпадение</th>
+                <th>Статус</th>
+                <th>Публикация</th>
+            </tr>
+        </thead>
+
+        <tbody>
+
+            {% for school in schools %}
+
+                <tr>
+
+                    <!-- Название школы -->
+                    <td>
+                        {{ school.school }}
+                    </td>
+
+                    <!-- Процент совпадения -->
+                    <td>
+                        {% if school.similarity != None %}
+                            {{ school.similarity }}%
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+
+                    <!-- Статус проверки -->
+                    <td>
+                        {% if school.status == "Размещение подтверждено" %}
+                            ✅ {{ school.status }}
+
+                        {% elif school.status == "Требуется проверка" %}
+                            ⚠️ {{ school.status }}
+
+                        {% elif school.status == "Проверка неполная" %}
+                            ⚠️ {{ school.status }}
+
+                        {% elif school.status == "Ошибка подключения" %}
+                            ❌ {{ school.status }}
+
+                        {% elif school.status == "Совпадение не обнаружено" %}
+                            ⚪ {{ school.status }}
+
+                        {% else %}
+                            {{ school.status }}
+                        {% endif %}
+                    </td>
+
+                    <!-- Ссылка на найденную публикацию -->
+                    <td>
+                        {% if school.url %}
+                            <a href="{{ school.url }}"
+                               target="_blank"
+                               rel="noopener noreferrer">
+                                Открыть публикацию ↗
+                            </a>
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+
+                </tr>
+
+            {% empty %}
+
+                <tr>
+                    <td colspan="4" style="text-align: center;">
+                        Результатов мониторинга пока нет.
+                    </td>
+                </tr>
+
+            {% endfor %}
+
+        </tbody>
+
+    </table>
+
+</div>
+
+
+
+{% endblock %}

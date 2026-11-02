@@ -1,0 +1,8 @@
+{% autoescape off %}Администратор {{ approval.user }} утвердил материал «{{ material.title }}».
+Основание: {{ approval.get_basis_display }}{% if approval.comment %}
+Комментарий: {{ approval.comment }}{% endif %}
+Выход: {{ material.scheduled_at|date:"d.m.Y H:i" }}
+
+Посмотреть тексты и при необходимости снять с публикации:
+{{ site_url }}/app/materials/{{ material.public_id }}/
+{% endautoescape %}

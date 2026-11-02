@@ -1,0 +1,41 @@
+# Сервер с доменом и HTTPS (например, VPS на Beget).
+# Запуск:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Caddy сам получает и продлевает сертификат Let's Encrypt для домена из DOMAIN в .env.
+services:
+  nginx:
+    ports: !reset []          # наружу смотрит только Caddy (80 и 443)
+
+  caddy:
+    image: caddy:2.8-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?Укажите DOMAIN в .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - nginx
+    restart: unless-stopped
+
+  backup:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: technopark
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      - db
+    # раз в сутки дамп базы, хранится 14 последних
+    entrypoint: >
+      sh -c 'while true; do
+        pg_dump -h db -U technopark technopark | gzip > /backups/db-$$(date +%F).sql.gz;
+        ls -1t /backups/db-*.sql.gz | tail -n +15 | xargs -r rm;
+        sleep 86400; done'
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

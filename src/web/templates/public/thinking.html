@@ -1,0 +1,76 @@
+{% extends "public/base.html" %}
+{% block title %}Проверяем заявку{% endblock %}
+{% block content %}
+<div class="card think" aria-live="polite">
+  <div class="think-art" aria-hidden="true">
+    <div class="think-sheet">
+      <span class="think-line" style="--w:88%; --d:0s"></span>
+      <span class="think-line" style="--w:72%; --d:.35s"></span>
+      <span class="think-line" style="--w:94%; --d:.7s"></span>
+      <span class="think-line" style="--w:58%; --d:1.05s"></span>
+      <span class="think-line" style="--w:80%; --d:1.4s"></span>
+      <span class="think-scan"></span>
+    </div>
+    <div class="think-lens"></div>
+    <span class="think-spark" style="--x:8%;  --y:18%; --d:.2s"></span>
+    <span class="think-spark" style="--x:88%; --y:12%; --d:1.1s"></span>
+    <span class="think-spark" style="--x:92%; --y:70%; --d:1.9s"></span>
+  </div>
+
+  <h1>{% if answered %}Спасибо за ответы!{% else %}Заявка №{{ sub.number }} сохранена{% endif %}</h1>
+  <p class="think-phrase" id="phrase">{% if answered %}Учитываем ваши ответы…{% else %}Отправляем заявку в редакцию…{% endif %}</p>
+  <div class="think-bar" aria-hidden="true"><span id="bar"></span></div>
+  <p class="muted think-note">Помощник редакции проверяет, хватает ли сведений для новости. Обычно это 5–15 секунд.
+    Если чего-то не хватит, появится пара коротких вопросов. Страницу можно не обновлять.</p>
+
+  <form method="post" action="{% url 'public_think' org.code sub.public_id %}" id="think-form">
+    {% csrf_token %}
+    <noscript><button class="btn">Продолжить</button></noscript>
+  </form>
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById("think-form");
+  var token = form.querySelector("input[name=csrfmiddlewaretoken]").value;
+  var phraseEl = document.getElementById("phrase");
+  var bar = document.getElementById("bar");
+  var pool = [
+    "Читаем ваш текст…",
+    "Проверяем, указаны ли дата и место…",
+    "Смотрим, понятно ли, кто участвовал…",
+    "Проверяем, чем всё закончилось…",
+    "Сверяем имена и цифры…",
+    "Ищем, каких деталей может не хватать…",
+    "Если нужно, готовим пару коротких вопросов…",
+    "Проверка идёт тщательно — ещё немного…"
+  ];
+  for (var i = pool.length - 1; i > 0; i--) {            // каждый раз в новом порядке
+    var j = Math.floor(Math.random() * (i + 1)), t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+  }
+  var tail = ["Почти готово…", "Ещё пара секунд…"];
+  var k = 0, started = Date.now();
+  function nextPhrase() { var p = k < pool.length ? pool[k] : tail[(k - pool.length) % 2]; k += 1; return p; }
+  var phraseTimer = setInterval(function () {
+    phraseEl.classList.add("out");
+    setTimeout(function () { phraseEl.textContent = nextPhrase(); phraseEl.classList.remove("out"); }, 280);
+  }, 2600);
+  var barTimer = setInterval(function () {             // полоса быстро идёт вначале и замедляется
+    var s = (Date.now() - started) / 1000;
+    bar.style.width = (100 * (1 - Math.exp(-s / 9)) * 0.95).toFixed(1) + "%";
+  }, 200);
+
+  function go(url) { clearInterval(phraseTimer); clearInterval(barTimer); bar.style.width = "100%";
+                     setTimeout(function () { window.location.replace(url); }, 250); }
+  var failures = 0;
+  function ask() {
+    fetch(form.action, {method: "POST", credentials: "same-origin",
+                        headers: {"Accept": "application/json", "X-CSRFToken": token}})
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) { if (d.state === "thinking") setTimeout(ask, 1500); else go(d.next); })
+      .catch(function () { failures += 1; if (failures < 4) setTimeout(ask, 2000 * failures); else go(window.location.href); });
+  }
+  ask();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% autoescape off %}Автор дополнил заявку №{{ sub.number }}: {{ sub.title }}
+Автор: {{ sub.author_name }}{% if sub.author_org %}, {{ sub.author_org }}{% endif %} <{{ sub.author_email }}>
+
+Заявка снова ждёт решения. Текст с дополнением:
+{{ sub.text|truncatechars:900 }}
+
+Открыть: {{ site_url }}/app/submissions/{{ sub.public_id }}/
+{% endautoescape %}

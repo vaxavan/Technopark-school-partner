@@ -1,0 +1,11 @@
+{% extends "public/base.html" %}
+{% block title %}{{ pub.get_channel_display }} — демо-публикация{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="demo-banner">Демо-режим: токен {{ pub.get_channel_display }} не настроен, поэтому пост «опубликован» на этой странице.
+    Как подключить настоящую площадку — в «Настройках».</div>
+  <p class="muted">{{ pub.get_channel_display }} · {{ pub.published_at|default:pub.scheduled_at|date:"j E Y, H:i" }}</p>
+  <div style="white-space:pre-wrap">{{ variant.text }}</div>
+  {% if photos %}<div class="photos" style="margin-top:12px">{% for p in photos %}<img src="{{ p }}" alt="">{% endfor %}</div>{% endif %}
+</div>
+{% endblock %}

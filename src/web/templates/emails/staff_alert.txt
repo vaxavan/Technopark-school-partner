@@ -1,0 +1,4 @@
+{% autoescape off %}{{ org.name }}: {{ event.message }}
+
+Журнал: {{ site_url }}/app/events/
+{% endautoescape %}

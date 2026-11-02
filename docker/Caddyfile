@@ -1,0 +1,9 @@
+{$DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 30MB
+	}
+	reverse_proxy nginx:80 {
+		header_up X-Forwarded-Proto https
+	}
+}

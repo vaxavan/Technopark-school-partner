@@ -1,0 +1,7 @@
+{% if page.has_other_pages %}
+<div class="actions">
+  {% if page.has_previous %}<a class="btn ghost small" href="?page={{ page.previous_page_number }}{% if status %}&status={{ status }}{% endif %}">← Назад</a>{% endif %}
+  <span class="muted">Стр. {{ page.number }} из {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a class="btn ghost small" href="?page={{ page.next_page_number }}{% if status %}&status={{ status }}{% endif %}">Дальше →</a>{% endif %}
+</div>
+{% endif %}

@@ -1,0 +1,31 @@
+{% extends "staff/base.html" %}
+{% block title %}Справочник школ{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>Справочник школ-партнёров</h1><p class="muted">{{ schools|length }} школ{% if no_email %} · <strong style="color:var(--warn)">без e-mail: {{ no_email }}</strong> — им рассылка не уйдёт, но размещение проверяется{% endif %}</p></div>
+  <div class="actions">
+    <form method="get"><input type="search" name="q" value="{{ q }}" placeholder="Поиск" style="width:200px"></form>
+    <a class="btn" href="{% url 'school_new' %}">Добавить школу</a>
+  </div>
+</div>
+<div class="card table-wrap">
+<table>
+  <tr><th>№</th><th>Школа</th><th>E-mail</th><th>Источники</th><th class="num">Размещено</th><th></th></tr>
+  {% for s in schools %}
+  <tr {% if not s.active %}style="opacity:.55"{% endif %}>
+    <td>{{ s.number|default:"" }}</td>
+    <td><a href="{% url 'school_edit' s.pk %}">{{ s.name }}</a><br><small>{{ s.territory }}{% if not s.active %} · неактивна{% endif %}{% if s.unsubscribed_at %} · отписалась{% endif %}</small></td>
+    <td>{{ s.email|default:"—" }}</td>
+    <td><small>{% for src in s.sources.all %}{{ src.get_kind_display }}{% if src.last_error %} <span title="{{ src.last_error }}" style="color:var(--bad)">⚠</span>{% elif src.last_ok_at %} ✓{% endif %}<br>{% empty %}—{% endfor %}</small></td>
+    <td class="num">{{ s.n_confirmed }} / {{ s.n_total }}</td>
+    <td><form method="post" action="{% url 'school_check' s.pk %}">{% csrf_token %}<button class="btn ghost small">Проверить</button></form></td>
+  </tr>
+  {% empty %}<tr><td colspan="6" class="muted">Школ нет. Загрузите справочник из Excel ниже.</td></tr>{% endfor %}
+</table>
+</div>
+<div class="card">
+  <h2>Импорт из Excel</h2>
+  <p class="help">Формат как у schools.xlsx технопарка: территория, №, наименование, сайт, примечание; можно добавить столбец «E-mail». Повторный импорт обновляет школы по названию.</p>
+  <form method="post" enctype="multipart/form-data" class="actions">{% csrf_token %}{{ import_form.file }}<button class="btn ghost">Загрузить</button></form>
+</div>
+{% endblock %}

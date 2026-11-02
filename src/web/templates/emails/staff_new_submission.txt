@@ -1,0 +1,7 @@
+{% autoescape off %}Новая заявка №{{ sub.number }}: {{ sub.title }}
+Автор: {{ sub.author_name }}{% if sub.author_org %}, {{ sub.author_org }}{% endif %} <{{ sub.author_email }}>
+
+{{ sub.text|truncatechars:600 }}
+
+Открыть: {{ site_url }}/app/submissions/{{ sub.public_id }}/
+{% endautoescape %}

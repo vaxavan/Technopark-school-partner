@@ -1,0 +1,135 @@
+{% extends 'main/layout.html' %}
+
+{% block title %}
+Генерация новостей
+{% endblock %}
+
+{% block content %}
+
+<div class="news-generator">
+
+    <h1>Генерация новостей</h1>
+
+    <p>
+        Введите информацию о мероприятии,
+        и система поможет подготовить новостную публикацию.
+    </p>
+
+    <form id="newsForm">
+        {% csrf_token %}
+
+        <label for="newsText">
+            Информация о мероприятии:
+        </label>
+
+        <textarea
+            id="newsText"
+            name="newsText"
+            rows="8"
+            placeholder="Например: 15 октября в технопарке прошёл мастер-класс по робототехнике..."
+            required
+        ></textarea>
+
+        <button type="submit" class="generate-btn">
+            Сгенерировать новость
+        </button>
+
+    </form>
+
+    <div class="preview-block">
+
+        <h3>Предварительный просмотр</h3>
+
+        <div id="preview">
+            Здесь появится введённый текст.
+        </div>
+
+    </div>
+
+    <div class="result-block">
+
+        <h3>Готовая новость</h3>
+
+        <div id="result">
+            Здесь появится результат генерации.
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+    const form = document.getElementById("newsForm");
+    const textInput = document.getElementById("newsText");
+    const preview = document.getElementById("preview");
+    const result = document.getElementById("result");
+    const button = form.querySelector('button[type="submit"]');
+
+    form.addEventListener("submit", async function(event) {
+
+        // Отменяем перезагрузку страницы
+        event.preventDefault();
+
+        // Получаем текст пользователя
+        const text = textInput.value.trim();
+
+        if (!text) {
+            result.textContent = "Пожалуйста, введите информацию о мероприятии.";
+            return;
+        }
+
+        // Показываем предварительный просмотр
+        preview.textContent = text;
+
+        // Показываем индикатор загрузки
+        result.textContent = "⏳ Генерируем новость...";
+
+        // Блокируем кнопку на время генерации
+        button.disabled = true;
+        button.textContent = "Генерация...";
+
+        try {
+
+            // Отправляем текст на сервер Django
+            const response = await fetch("{% url 'generate_news_api' %}", {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": "{{ csrf_token }}"
+                },
+
+                body: JSON.stringify({
+                    text: text
+                })
+            });
+
+            // Получаем ответ сервера
+            const data = await response.json();
+
+            // Проверяем наличие ошибки
+            if (!response.ok) {
+                throw new Error(
+                    data.error || "Ошибка при генерации новости."
+                );
+            }
+
+            // Показываем готовую новость
+            result.textContent = data.news;
+
+        } catch (error) {
+
+            // Показываем понятное сообщение об ошибке
+            result.textContent = "❌ " + error.message;
+
+        } finally {
+
+            // Возвращаем кнопку в обычное состояние
+            button.disabled = false;
+            button.textContent = "Сгенерировать новость";
+        }
+
+    });
+</script>
+
+{% endblock %}

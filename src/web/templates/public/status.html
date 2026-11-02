@@ -1,0 +1,8 @@
+{% extends "public/base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Заявка №{{ sub.number }}</h1>
+  {% if added %}<p class="msg success">Спасибо, дополнение получено. Редакция рассмотрит заявку снова.</p>{% endif %}
+  <p>Состояние: <strong>{{ sub.get_status_display }}</strong></p>
+</div>
+{% endblock %}

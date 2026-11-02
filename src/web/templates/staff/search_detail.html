@@ -1,0 +1,53 @@
+{% extends "staff/base.html" %}{% load ui %}
+{% block title %}Поиск «{{ search.query }}»{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>«{{ search.query }}»</h1>
+    <p class="muted">Поиск по сайтам школ от {{ search.created_at|date:"d.m.Y H:i" }}{% if search.since %}, публикации с {{ search.since|date:"d.m.Y" }}{% endif %}.
+      {% badge search.status search.get_status_display %}</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'search_xlsx' search.pk %}">Excel «есть / нет»</a>
+    <a class="btn ghost" href="{% url 'search_zip' search.pk %}">Архив со снимками (ZIP)</a>
+  </div>
+</div>
+
+{% if running %}
+  <div class="msg info">Сайты проверяются: {{ summary.done }} из {{ summary.total }} ({{ summary.percent }}%).
+    {% if search.status == 'agent' %}Проверяет агент обхода — результаты появятся после его очередного запуска.{% endif %}
+    Страница обновляется сама.</div>
+  <div class="think-bar" style="max-width:none;margin:-6px 0 16px"><span style="width:{{ summary.percent }}%"></span></div>
+  <script>setTimeout(function(){ location.reload(); }, 8000);</script>
+{% endif %}
+
+<div class="grid g4">
+  <div class="card"><div class="stat" style="color:var(--ok)">{{ summary.found }}</div><div class="stat-label">школ — есть публикации</div></div>
+  <div class="card"><div class="stat" style="color:var(--bad)">{{ summary.none }}</div><div class="stat-label">школ — не нашли</div></div>
+  <div class="card"><div class="stat" style="color:var(--warn)">{{ summary.unreachable }}</div><div class="stat-label">сайт не открылся</div></div>
+  <div class="card"><div class="stat">{{ summary.queued|add:summary.running }}</div><div class="stat-label">ещё проверяются</div></div>
+</div>
+
+<div class="actions" style="margin-bottom:14px">
+  {% if running %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button class="btn ghost">Остановить</button></form>{% endif %}
+  {% if search.status == 'agent' or summary.unreachable %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="server"><button class="btn ghost" title="Если агент не запускается или сайт не открылся у него">{% if search.status == 'agent' %}Проверить с сервера{% else %}Перепроверить не открывшиеся с сервера{% endif %}</button></form>{% endif %}
+  <form method="post" action="{% url 'search_delete' search.pk %}" onsubmit="return confirm('Удалить поиск вместе со снимками?')">{% csrf_token %}<button class="btn danger">Удалить</button></form>
+</div>
+
+<div class="card table-wrap">
+<table>
+  <tr><th>Школа</th><th>Результат</th><th>Найденные публикации</th><th class="num">Прочитано страниц</th></tr>
+  {% for r in results %}
+  <tr>
+    <td>{% if r.school.number %}{{ r.school.number }}. {% endif %}{{ r.school.name }}</td>
+    <td>{% badge r.status r.get_status_display %}{% if r.checked_by_agent %}<br><small class="muted">проверил агент</small>{% endif %}
+      {% if r.error and r.status != 'found' %}<br><small class="muted" title="{{ r.error }}">{{ r.error|truncatechars:90 }}</small>{% endif %}</td>
+    <td>{% for h in r.hits.all %}
+        <div style="margin-bottom:8px"><a href="{{ h.url }}" target="_blank">{{ h.title|default:h.url|truncatechars:90 }}</a>
+          {% if h.published_at %}<small class="muted"> · {{ h.published_at|date:"d.m.Y" }}</small>{% endif %}
+          <br><small class="muted">{{ h.snippet|truncatechars:200 }}</small>
+          <br><small>{% if h.screenshot %}<a href="{{ h.screenshot.url }}" target="_blank">снимок</a> · {% endif %}{% if h.html_copy %}<a href="{{ h.html_copy.url }}" target="_blank">копия страницы</a>{% endif %}</small></div>
+      {% empty %}<small class="muted">—</small>{% endfor %}</td>
+    <td class="num">{{ r.pages_read }}</td>
+  </tr>{% endfor %}
+</table>
+</div>
+{% endblock %}

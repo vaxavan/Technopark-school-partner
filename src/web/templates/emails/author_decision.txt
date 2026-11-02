@@ -1,0 +1,16 @@
+{% autoescape off %}Здравствуйте, {{ sub.author_name }}!
+{% if decision == "accepted" %}
+Ваша заявка №{{ sub.number }} «{{ sub.title }}» принята. Мы подготовим публикацию и разместим её на площадках {{ org.name }}.
+{% elif decision == "rejected" %}
+К сожалению, заявку №{{ sub.number }} «{{ sub.title }}» опубликовать не получится.
+Причина: {{ sub.decision_reason }}
+{% elif decision == "request_info" %}
+Чтобы подготовить новость по заявке №{{ sub.number }} «{{ sub.title }}», нам нужно немного больше сведений:
+
+{{ sub.decision_reason }}
+
+Дополнить заявку: {{ site_url }}/f/{{ org.code }}/s/{{ sub.public_id }}/add/
+{% endif %}
+С уважением,
+{{ org.name }}
+{% endautoescape %}

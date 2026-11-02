@@ -1,0 +1,66 @@
+{% extends "staff/base.html" %}{% load ui %}
+{% block title %}Заявка №{{ sub.number }}{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>Заявка №{{ sub.number }}: {{ sub.title }}</h1>
+    <p class="muted">Получена {{ sub.created_at|date:"j E Y, H:i" }} · {% badge sub.status sub.get_status_display %}</p></div>
+  {% if material %}<a class="btn ghost" href="{% url 'material_detail' material.public_id %}">Открыть материал →</a>{% endif %}
+</div>
+
+<div class="split">
+  <div>
+    <div class="card">
+      <h2>Сведения от автора</h2>
+      <div class="source">{{ sub.text }}</div>
+      <table style="margin-top:10px">
+        <tr><th>Когда</th><td>{{ sub.event_date|default:"—" }}</td></tr>
+        <tr><th>Где</th><td>{{ sub.place|default:"—" }}</td></tr>
+        <tr><th>Автор</th><td>{{ sub.author_name }}<br><a href="mailto:{{ sub.author_email }}">{{ sub.author_email }}</a> {{ sub.author_phone }}<br><small>{{ sub.author_org }}</small></td></tr>
+        <tr><th>Согласие ПДн</th><td>{{ sub.consent_at|date:"d.m.Y H:i" }}</td></tr>
+      </table>
+      {% with photos=sub.photos.all %}{% if photos %}<h3 style="margin-top:12px">Фото ({{ photos|length }})</h3>
+        <div class="photos">{% for p in photos %}<a href="{{ p.image.url }}" target="_blank"><img src="{{ p.image.url }}" alt=""></a>{% endfor %}</div>{% endif %}{% endwith %}
+    </div>
+    {% if sub.rounds.exists %}
+    <div class="card">
+      <h2>Уточняющие вопросы</h2>
+      {% for r in sub.rounds.all %}
+        <p class="muted">Раунд {{ r.number }}{% if r.skipped %} — пропущен{% endif %}</p>
+        <ul>{% for q in r.questions %}<li>{{ q.text }} — <strong>{{ r.answers|get:q.id|default:"нет ответа" }}</strong></li>{% endfor %}</ul>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    {% if sub.completeness.missing %}<div class="card"><h2>Чего может не хватать</h2><ul>{% for m in sub.completeness.missing %}<li>{{ m }}</li>{% endfor %}</ul></div>{% endif %}
+    {% if sub.decision_reason %}<div class="card"><h2>{% if sub.status == 'rejected' %}Причина отказа{% else %}Запрошено у автора{% endif %}</h2><p>{{ sub.decision_reason }}</p></div>{% endif %}
+
+    {% if sub.status == 'new' or sub.status == 'waiting_author' %}
+    <div class="card">
+      <h2>Решение</h2>
+      {% if sub.status == 'new' %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="accept">
+        <label>Где публикуем</label><div class="checks">{{ accept_form.channels }}</div>
+        <p class="help">После «Принять» модель подготовит тексты под каждую площадку (в фоне).</p>
+        <button class="btn ok">Принять</button>
+      </form>
+      <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="request_info">
+        <label for="ri">Запросить у автора</label><textarea id="ri" name="reason" rows="2" placeholder="Например: пришлите, пожалуйста, 2–3 фото"></textarea>
+        <p style="margin-top:8px"><button class="btn ghost">Запросить материалы</button></p>
+      </form>
+      {% endif %}
+      <form method="post" style="margin-top:12px">{% csrf_token %}<input type="hidden" name="action" value="reject">
+        <label for="rj">Отклонить с причиной</label><textarea id="rj" name="reason" rows="2"></textarea>
+        <p style="margin-top:8px"><button class="btn danger">Отклонить</button></p>
+      </form>
+    </div>
+    {% endif %}
+
+    <div class="card"><h2>История</h2>
+      <ul class="timeline">{% for e in events %}<li><small>{{ e.created_at|date:"d.m H:i" }}</small> {{ e.message }}{% if e.actor %} <small>— {{ e.actor }}</small>{% endif %}</li>{% empty %}<li class="muted">—</li>{% endfor %}</ul>
+    </div>
+  </div>
+</div>
+{% endblock %}
