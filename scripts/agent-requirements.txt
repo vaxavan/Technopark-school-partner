@@ -3,3 +3,4 @@ Django>=5.2,<5.3
 requests[socks]>=2.32
 beautifulsoup4>=4.12
 lxml>=5
+defusedxml>=0.7

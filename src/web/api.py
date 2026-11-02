@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone as dj_tz
 from rest_framework import mixins, permissions, serializers, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import Throttled, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -31,7 +31,7 @@ from submissions import services as sub_services
 from submissions.clarify import MAX_ROUNDS
 from submissions.models import Submission
 
-from . import selectors
+from . import login_guard, selectors
 from .forms import SubmissionForm
 
 
@@ -404,9 +404,16 @@ class LoginView(APIView):
     throttle_classes = [AnonRateThrottle]
 
     def post(self, request):
-        user = authenticate(request, username=request.data.get("email", ""), password=request.data.get("password", ""))
+        from .views_public import client_ip
+
+        email, ip = request.data.get("email", ""), client_ip(request)
+        if login_guard.is_locked(ip, email):
+            raise Throttled(detail=login_guard.LOCKED_MESSAGE)
+        user = authenticate(request, username=email, password=request.data.get("password", ""))
         if user is None:
+            login_guard.register_failure(ip, email)
             raise ValidationError({"detail": "Неверный e-mail или пароль"})
+        login_guard.register_success(ip, email)
         login(request, user)
         return Response(MeView.payload(request, user))
 

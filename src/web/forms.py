@@ -1,9 +1,32 @@
 from django import forms
+from django.contrib.auth.forms import AuthenticationForm
 from django.core.validators import FileExtensionValidator
 
 from accounts.models import Organization
 from materials.models import ApprovalBasis, Channel
 from partners.models import School, Source
+
+from . import login_guard
+
+class GuardedLoginForm(AuthenticationForm):
+    """Вход в рабочее место с защитой от подбора пароля (см. login_guard)."""
+
+    error_messages = {**AuthenticationForm.error_messages, "invalid_login": "Неверный e-mail или пароль"}
+
+    def clean(self):
+        from .views_public import client_ip
+
+        ip, email = client_ip(self.request), self.data.get("username", "")
+        if login_guard.is_locked(ip, email):
+            raise forms.ValidationError(login_guard.LOCKED_MESSAGE, code="locked")
+        try:
+            cleaned = super().clean()
+        except forms.ValidationError:
+            login_guard.register_failure(ip, email)
+            raise
+        login_guard.register_success(ip, email)
+        return cleaned
+
 
 IMAGE_EXT = ["jpg", "jpeg", "png", "webp", "heic", "gif"]
 MAX_PHOTOS = 10

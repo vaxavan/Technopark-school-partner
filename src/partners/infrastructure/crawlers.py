@@ -4,11 +4,13 @@
 import logging
 import re
 import time
-import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlparse
+from xml.etree.ElementTree import ParseError
 
+from defusedxml import DefusedXmlException
+from defusedxml.ElementTree import fromstring as parse_xml  # XML с сайтов школ — недоверенный: без сущностей и DTD
 import requests
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
@@ -182,8 +184,8 @@ class SitemapCrawler(HtmlSectionCrawler):
 
     def _collect(self, url, depth):
         try:
-            root = ET.fromstring(self.http.get(url).encode("utf-8"))
-        except ET.ParseError as exc:
+            root = parse_xml(self.http.get(url).encode("utf-8"))
+        except (ParseError, DefusedXmlException) as exc:
             raise SourceUnavailable(f"{url}: не XML ({exc})") from exc
         ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
         result = []
@@ -213,8 +215,8 @@ class RssCrawler:
 
     def fetch(self, source: Source):
         try:
-            root = ET.fromstring(self.http.get(source.url).encode("utf-8"))
-        except ET.ParseError as exc:
+            root = parse_xml(self.http.get(source.url).encode("utf-8"))
+        except (ParseError, DefusedXmlException) as exc:
             raise SourceUnavailable(f"{source.url}: не RSS ({exc})") from exc
         result = []
         content_ns = "{http://purl.org/rss/1.0/modules/content/}encoded"

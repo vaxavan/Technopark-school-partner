@@ -10,11 +10,13 @@
 
 import logging
 import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urljoin, urlparse
+from xml.etree.ElementTree import ParseError
 
+from defusedxml import DefusedXmlException
+from defusedxml.ElementTree import fromstring as parse_xml  # XML с сайтов школ — недоверенный: без сущностей и DTD
 from bs4 import BeautifulSoup
 
 from partners.domain.entities import Source, SourceKind
@@ -247,8 +249,8 @@ class SiteExplorer:
 
     def _sitemap(self, url, depth=0):
         try:
-            root = ET.fromstring(self._get(url).encode("utf-8"))
-        except ET.ParseError:
+            root = parse_xml(self._get(url).encode("utf-8"))
+        except (ParseError, DefusedXmlException):
             return []      # не XML (например, HTML-карта сайта) — разберём как раздел
         ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
         result = []
@@ -271,8 +273,8 @@ class SiteExplorer:
 
     def _rss(self, url):
         try:
-            root = ET.fromstring(self._get(url).encode("utf-8"))
-        except ET.ParseError as exc:
+            root = parse_xml(self._get(url).encode("utf-8"))
+        except (ParseError, DefusedXmlException) as exc:
             raise SourceUnavailable(f"{url}: не RSS") from exc
         content_ns = "{http://purl.org/rss/1.0/modules/content/}encoded"
         result = []

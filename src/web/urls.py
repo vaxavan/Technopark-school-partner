@@ -4,6 +4,7 @@ from django.urls import path
 from . import views_public as pub
 from . import views_search as search
 from . import views_staff as staff
+from .forms import GuardedLoginForm
 
 urlpatterns = [
     # публичная часть
@@ -20,7 +21,7 @@ urlpatterns = [
     path("p/<str:token>/unsubscribe/", pub.school_unsubscribe, name="school_unsubscribe"),
 
     # вход
-    path("login/", auth_views.LoginView.as_view(template_name="staff/login.html"), name="login"),
+    path("login/", auth_views.LoginView.as_view(template_name="staff/login.html", authentication_form=GuardedLoginForm), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("org/<int:org_id>/", staff.switch_org, name="switch_org"),
 
